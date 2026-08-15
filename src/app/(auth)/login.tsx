@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { AuthLayout } from '@/components/AuthLayout';
+import { DemoBanner } from '@/components/DemoBanner';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { BrandColors } from '@/constants/colors';
+import { DEMO_EMAIL, DEMO_PASSWORD } from '@/constants/demo';
 import { MIN_TOUCH_TARGET, MOBILE_BREAKPOINT } from '@/constants/layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEmailError, getPasswordError } from '@/utils/validation';
@@ -36,10 +38,11 @@ export default function LoginScreen() {
   const { login } = useAuth();
   const { width } = useWindowDimensions();
   const isMobile = width < MOBILE_BREAKPOINT;
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(DEMO_EMAIL);
+  const [password, setPassword] = useState(DEMO_PASSWORD);
   const [emailError, setEmailError] = useState<string>();
   const [passwordError, setPasswordError] = useState<string>();
+  const [loginError, setLoginError] = useState<string>();
 
   const handleLogin = () => {
     const nextEmailError = getEmailError(email);
@@ -50,16 +53,35 @@ export default function LoginScreen() {
 
     if (nextEmailError || nextPasswordError) return;
 
-    login(email.trim(), password);
+    const result = login(email.trim(), password);
+    if (!result.success) {
+      setLoginError(result.error);
+      return;
+    }
+
     router.replace('/dashboard');
   };
 
   return (
-    <AuthLayout
+    <>
+      <DemoBanner variant="auth" />
+      <AuthLayout
       compactMobile
       title="Gerencie sua equipe de forma simples."
       subtitle="Acesse sua conta para continuar."
       footer={isMobile ? <LoginLinks mobile /> : undefined}>
+      <View style={styles.demoCredentials}>
+        <Text style={styles.demoCredentialsTitle}>Credenciais de demonstração</Text>
+        <Text style={styles.demoCredentialsText}>
+          E-mail: <Text style={styles.demoCredentialsValue}>{DEMO_EMAIL}</Text>
+        </Text>
+        <Text style={styles.demoCredentialsText}>
+          Senha: <Text style={styles.demoCredentialsValue}>{DEMO_PASSWORD}</Text>
+        </Text>
+      </View>
+
+      {loginError && <Text style={styles.loginError}>{loginError}</Text>}
+
       <Input
         compact
         label="E-mail"
@@ -96,10 +118,41 @@ export default function LoginScreen() {
 
       {!isMobile && <LoginLinks />}
     </AuthLayout>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  demoCredentials: {
+    backgroundColor: BrandColors.background,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: BrandColors.border,
+  },
+  demoCredentialsTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: BrandColors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  demoCredentialsText: {
+    fontSize: 13,
+    color: BrandColors.textSecondary,
+  },
+  demoCredentialsValue: {
+    fontWeight: '600',
+    color: BrandColors.textPrimary,
+  },
+  loginError: {
+    fontSize: 13,
+    color: BrandColors.red,
+    textAlign: 'center',
+  },
   actions: {
     marginTop: 8,
   },
