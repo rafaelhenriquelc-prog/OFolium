@@ -2,6 +2,7 @@ import { Redirect, Slot } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { DemoBanner } from '@/components/DemoBanner';
 import { MobileBottomNav } from '@/components/mobile/MobileBottomNav';
 import { Sidebar } from '@/components/Sidebar';
 import { BrandColors } from '@/constants/colors';
@@ -18,13 +19,16 @@ function AppShell() {
   return (
     <View style={styles.root}>
       <Sidebar />
-      <View
-        style={[
-          styles.content,
-          isCompactLayout && mobilePageContain,
-          isCompactLayout && { paddingTop: insets.top },
-        ]}>
-        <Slot />
+      <View style={styles.mainColumn}>
+        <DemoBanner />
+        <View
+          style={[
+            styles.content,
+            isCompactLayout && mobilePageContain,
+            isCompactLayout && { paddingTop: insets.top },
+          ]}>
+          <Slot />
+        </View>
       </View>
       {isCompactLayout && <MobileBottomNav />}
     </View>
@@ -57,6 +61,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: BrandColors.background,
     ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
+  },
+  mainColumn: {
+    flex: 1,
+    minWidth: 0,
   },
   content: {
     flex: 1,

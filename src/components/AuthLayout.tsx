@@ -85,6 +85,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
+    paddingTop: 36,
     ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
   },
   scrollContentMobile: {

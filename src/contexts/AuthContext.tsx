@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
+import { DEMO_EMAIL, DEMO_PASSWORD, IS_DEMO } from '@/constants/demo';
 import { MOCK_BUSINESS, MOCK_USER } from '@/data/initialData';
 import { getEmailError, getPasswordError } from '@/utils/validation';
 
@@ -27,7 +28,7 @@ type AuthContextValue = {
   user: UserData | null;
   business: BusinessData | null;
   saveSuccessMessage: string | null;
-  login: (email: string, password: string) => void;
+  login: (email: string, password: string) => { success: boolean; error?: string };
   logout: () => void;
   register: (account: RegisterAccountData, business: BusinessData) => void;
   updateAccount: (data: { name: string; email: string }) => { success: boolean; emailError?: string };
@@ -59,13 +60,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<UserData | null>(null);
   const [business, setBusiness] = useState<BusinessData | null>(null);
-  const [storedPassword, setStoredPassword] = useState('demo123');
+  const [storedPassword, setStoredPassword] = useState(DEMO_PASSWORD);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
-  const login = useCallback((_email: string, _password: string) => {
-    setUser(MOCK_USER);
+  const login = useCallback((email: string, password: string) => {
+    if (IS_DEMO) {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (normalizedEmail !== DEMO_EMAIL || password !== DEMO_PASSWORD) {
+        return { success: false, error: 'Use as credenciais de demonstração exibidas na tela de login.' };
+      }
+    }
+
+    setUser({ ...MOCK_USER, email: IS_DEMO ? DEMO_EMAIL : email.trim() });
     setBusiness(MOCK_BUSINESS);
     setIsAuthenticated(true);
+    return { success: true };
   }, []);
 
   const logout = useCallback(() => {
