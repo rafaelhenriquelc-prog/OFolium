@@ -1,4 +1,4 @@
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -12,9 +12,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getEmailError, getPasswordError } from '@/utils/validation';
 
 export default function RegisterScreen() {
-  const router = useRouter();
   const { register } = useAuth();
   const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -30,6 +30,8 @@ export default function RegisterScreen() {
   const [passwordError, setPasswordError] = useState<string>();
   const [confirmPasswordError, setConfirmPasswordError] = useState<string>();
   const [businessNameError, setBusinessNameError] = useState<string>();
+  const [formError, setFormError] = useState<string>();
+  const [successMessage, setSuccessMessage] = useState<string>();
 
   const handleContinue = () => {
     const nextNameError = !name.trim() ? 'Informe seu nome completo.' : undefined;
@@ -46,22 +48,47 @@ export default function RegisterScreen() {
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
     setConfirmPasswordError(nextConfirmPasswordError);
+    setFormError(undefined);
+    setSuccessMessage(undefined);
 
     if (nextNameError || nextEmailError || nextPasswordError || nextConfirmPasswordError) return;
 
     setStep(2);
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
+    if (isSubmitting) return;
+
     const nextBusinessNameError = !businessName.trim() ? 'Informe o nome do negócio.' : undefined;
     setBusinessNameError(nextBusinessNameError);
+    setFormError(undefined);
+    setSuccessMessage(undefined);
+
     if (nextBusinessNameError) return;
 
-    register(
-      { name: name.trim(), email: email.trim(), password },
-      { name: businessName.trim(), cnpj: cnpj || undefined, phone: phone || undefined },
-    );
-    router.replace('/dashboard');
+    setIsSubmitting(true);
+
+    try {
+      const result = await register(
+        { name: name.trim(), email: email.trim(), password },
+        { name: businessName.trim(), cnpj: cnpj || undefined, phone: phone || undefined },
+      );
+
+      if (!result.success) {
+        setFormError(result.error);
+        return;
+      }
+
+      if (result.needsEmailConfirmation) {
+        setSuccessMessage(
+          result.message ??
+            'Enviamos um e-mail de confirmação. Verifique sua caixa de entrada para ativar sua conta antes de entrar.',
+        );
+        return;
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -72,6 +99,13 @@ export default function RegisterScreen() {
           ? 'Etapa 1 de 2 — Sua conta'
           : 'Etapa 2 de 2 — Você poderá completar ou alterar esses dados depois.'
       }>
+      {formError && <Text style={styles.formError}>{formError}</Text>}
+      {successMessage && (
+        <View style={styles.successBanner}>
+          <Text style={styles.successText}>{successMessage}</Text>
+        </View>
+      )}
+
       {step === 1 ? (
         <>
           <Input
@@ -145,9 +179,20 @@ export default function RegisterScreen() {
             onChangeText={setPhone}
           />
           <View style={styles.stepActions}>
-            <Button label="Voltar" variant="outline" onPress={() => setStep(1)} />
+            <Button
+              label="Voltar"
+              variant="outline"
+              disabled={isSubmitting}
+              onPress={() => setStep(1)}
+            />
             <View style={styles.primaryAction}>
-              <Button label="Criar minha conta" fullWidth onPress={handleRegister} />
+              <Button
+                label="Criar minha conta"
+                fullWidth
+                loading={isSubmitting}
+                loadingLabel="Criando conta..."
+                onPress={handleRegister}
+              />
             </View>
           </View>
         </>
@@ -166,6 +211,22 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
+  formError: {
+    fontSize: 13,
+    color: BrandColors.red,
+    textAlign: 'center',
+  },
+  successBanner: {
+    backgroundColor: BrandColors.greenLight,
+    borderRadius: 10,
+    padding: 12,
+  },
+  successText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: BrandColors.green,
+    textAlign: 'center',
+  },
   stepActions: {
     flexDirection: 'row',
     gap: 12,

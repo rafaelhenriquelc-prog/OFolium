@@ -56,9 +56,9 @@ export function MobileMoreMenu({ visible, onClose }: MobileMoreMenuProps) {
     router.push(href as Href);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     onClose();
-    logout();
+    await logout();
     router.replace('/login');
   };
 

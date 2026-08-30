@@ -1,14 +1,12 @@
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { AuthLayout } from '@/components/AuthLayout';
-import { DemoBanner } from '@/components/DemoBanner';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { BrandColors } from '@/constants/colors';
-import { DEMO_EMAIL, DEMO_PASSWORD } from '@/constants/demo';
 import { MIN_TOUCH_TARGET, MOBILE_BREAKPOINT } from '@/constants/layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEmailError, getPasswordError } from '@/utils/validation';
@@ -34,52 +32,47 @@ function LoginLinks({ mobile }: { mobile?: boolean }) {
 }
 
 export default function LoginScreen() {
-  const router = useRouter();
   const { login } = useAuth();
   const { width } = useWindowDimensions();
   const isMobile = width < MOBILE_BREAKPOINT;
-  const [email, setEmail] = useState(DEMO_EMAIL);
-  const [password, setPassword] = useState(DEMO_PASSWORD);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [emailError, setEmailError] = useState<string>();
   const [passwordError, setPasswordError] = useState<string>();
   const [loginError, setLoginError] = useState<string>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    if (isSubmitting) return;
+
     const nextEmailError = getEmailError(email);
     const nextPasswordError = getPasswordError(password);
 
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
+    setLoginError(undefined);
 
     if (nextEmailError || nextPasswordError) return;
 
-    const result = login(email.trim(), password);
-    if (!result.success) {
-      setLoginError(result.error);
-      return;
-    }
+    setIsSubmitting(true);
 
-    router.replace('/dashboard');
+    try {
+      const result = await login(email.trim(), password);
+      if (!result.success) {
+        setLoginError(result.error);
+        return;
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <>
-      <DemoBanner variant="auth" />
-      <AuthLayout
+    <AuthLayout
       compactMobile
       title="Gerencie sua equipe de forma simples."
       subtitle="Acesse sua conta para continuar."
       footer={isMobile ? <LoginLinks mobile /> : undefined}>
-      <View style={styles.demoCredentials}>
-        <Text style={styles.demoCredentialsTitle}>Credenciais de demonstração</Text>
-        <Text style={styles.demoCredentialsText}>
-          E-mail: <Text style={styles.demoCredentialsValue}>{DEMO_EMAIL}</Text>
-        </Text>
-        <Text style={styles.demoCredentialsText}>
-          Senha: <Text style={styles.demoCredentialsValue}>{DEMO_PASSWORD}</Text>
-        </Text>
-      </View>
-
       {loginError && <Text style={styles.loginError}>{loginError}</Text>}
 
       <Input
@@ -92,6 +85,7 @@ export default function LoginScreen() {
         onChangeText={(text) => {
           setEmail(text);
           if (emailError) setEmailError(undefined);
+          if (loginError) setLoginError(undefined);
         }}
         error={emailError}
       />
@@ -103,6 +97,7 @@ export default function LoginScreen() {
         onChangeText={(text) => {
           setPassword(text);
           if (passwordError) setPasswordError(undefined);
+          if (loginError) setLoginError(undefined);
         }}
         error={passwordError}
       />
@@ -111,6 +106,8 @@ export default function LoginScreen() {
         <Button
           label="Entrar"
           fullWidth
+          loading={isSubmitting}
+          loadingLabel="Entrando..."
           onPress={handleLogin}
           style={isMobile ? styles.loginButton : undefined}
         />
@@ -118,36 +115,10 @@ export default function LoginScreen() {
 
       {!isMobile && <LoginLinks />}
     </AuthLayout>
-    </>
   );
 }
 
 const styles = StyleSheet.create({
-  demoCredentials: {
-    backgroundColor: BrandColors.background,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: BrandColors.border,
-  },
-  demoCredentialsTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: BrandColors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 2,
-  },
-  demoCredentialsText: {
-    fontSize: 13,
-    color: BrandColors.textSecondary,
-  },
-  demoCredentialsValue: {
-    fontWeight: '600',
-    color: BrandColors.textPrimary,
-  },
   loginError: {
     fontSize: 13,
     color: BrandColors.red,

@@ -2,6 +2,7 @@ import { Redirect, Slot } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
 import { DemoBanner } from '@/components/DemoBanner';
 import { MobileBottomNav } from '@/components/mobile/MobileBottomNav';
 import { Sidebar } from '@/components/Sidebar';
@@ -36,7 +37,11 @@ function AppShell() {
 }
 
 export default function AppLayout() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <AuthLoadingScreen />;
+  }
 
   if (!isAuthenticated) {
     return <Redirect href="/login" />;

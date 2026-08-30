@@ -55,9 +55,9 @@ export function Sidebar() {
   const displayRole = user?.role || 'Administrador';
   const displayInitials = user?.initials || 'LA';
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setMenuOpen(false);
-    logout();
+    await logout();
     router.replace('/login');
   };
 

@@ -1,7 +1,17 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
-import { DEMO_EMAIL, DEMO_PASSWORD, IS_DEMO } from '@/constants/demo';
-import { MOCK_BUSINESS, MOCK_USER } from '@/data/initialData';
+import { MOCK_BUSINESS } from '@/data/initialData';
+import { supabase } from '@/lib/supabase';
+import { translateAuthError } from '@/utils/authErrors';
 import { getEmailError, getPasswordError } from '@/utils/validation';
 
 type BusinessData = {
@@ -23,14 +33,22 @@ type RegisterAccountData = {
   password: string;
 };
 
+type LoginResult = { success: true } | { success: false; error: string };
+
+type RegisterResult =
+  | { success: true; needsEmailConfirmation?: boolean; message?: string }
+  | { success: false; error: string };
+
 type AuthContextValue = {
   isAuthenticated: boolean;
+  isLoading: boolean;
+  session: Session | null;
   user: UserData | null;
   business: BusinessData | null;
   saveSuccessMessage: string | null;
-  login: (email: string, password: string) => { success: boolean; error?: string };
-  logout: () => void;
-  register: (account: RegisterAccountData, business: BusinessData) => void;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  logout: () => Promise<void>;
+  register: (account: RegisterAccountData, business: BusinessData) => Promise<RegisterResult>;
   updateAccount: (data: { name: string; email: string }) => { success: boolean; emailError?: string };
   updateBusiness: (data: BusinessData) => { success: boolean; errors?: Record<string, string> };
   changePassword: (currentPassword: string, newPassword: string) => { success: boolean; error?: string };
@@ -56,44 +74,140 @@ function normalizePhoneDigits(value?: string): string {
   return (value ?? '').replace(/\D/g, '');
 }
 
+function mapSessionUser(session: Session): UserData {
+  const metadataName = session.user.user_metadata?.full_name;
+  const name =
+    typeof metadataName === 'string' && metadataName.trim()
+      ? metadataName.trim()
+      : session.user.email?.split('@')[0] ?? 'Usuário';
+
+  return {
+    name,
+    email: session.user.email ?? '',
+    role: 'Administrador',
+    initials: buildInitials(name),
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [business, setBusiness] = useState<BusinessData | null>(null);
-  const [storedPassword, setStoredPassword] = useState(DEMO_PASSWORD);
+  const [isLoading, setIsLoading] = useState(true);
+  const [storedPassword, setStoredPassword] = useState('');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
-  const login = useCallback((email: string, password: string) => {
-    if (IS_DEMO) {
-      const normalizedEmail = email.trim().toLowerCase();
-      if (normalizedEmail !== DEMO_EMAIL || password !== DEMO_PASSWORD) {
-        return { success: false, error: 'Use as credenciais de demonstração exibidas na tela de login.' };
+  const applySession = useCallback(
+    (nextSession: Session | null, businessOverride?: BusinessData | null) => {
+      setSession(nextSession);
+
+      if (!nextSession) {
+        setUser(null);
+        setBusiness(null);
+        return;
       }
+
+      setUser(mapSessionUser(nextSession));
+
+      if (businessOverride !== undefined) {
+        setBusiness(businessOverride);
+        return;
+      }
+
+      setBusiness((current) => current ?? MOCK_BUSINESS);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+
+      if (error) {
+        console.warn('Erro ao recuperar sessão:', error.message);
+      }
+
+      applySession(data.session ?? null);
+      setIsLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      applySession(nextSession);
+      setIsLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [applySession]);
+
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (error) {
+      return { success: false, error: translateAuthError(error.message) };
     }
 
-    setUser({ ...MOCK_USER, email: IS_DEMO ? DEMO_EMAIL : email.trim() });
-    setBusiness(MOCK_BUSINESS);
-    setIsAuthenticated(true);
+    if (!data.session) {
+      return {
+        success: false,
+        error: 'Não foi possível iniciar a sessão. Tente novamente.',
+      };
+    }
+
+    applySession(data.session);
     return { success: true };
-  }, []);
+  }, [applySession]);
 
-  const logout = useCallback(() => {
-    setIsAuthenticated(false);
-    setUser(null);
-    setBusiness(null);
-  }, []);
+  const logout = useCallback(async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.warn('Erro ao encerrar sessão:', error.message);
+    }
+    applySession(null);
+  }, [applySession]);
 
-  const register = useCallback((account: RegisterAccountData, businessData: BusinessData) => {
-    setUser({
-      name: account.name,
-      email: account.email,
-      role: 'Administrador',
-      initials: buildInitials(account.name),
-    });
-    setBusiness(businessData);
-    setStoredPassword(account.password);
-    setIsAuthenticated(true);
-  }, []);
+  const register = useCallback(
+    async (account: RegisterAccountData, businessData: BusinessData): Promise<RegisterResult> => {
+      const { data, error } = await supabase.auth.signUp({
+        email: account.email.trim(),
+        password: account.password,
+        options: {
+          data: {
+            full_name: account.name.trim(),
+          },
+        },
+      });
+
+      if (error) {
+        return { success: false, error: translateAuthError(error.message) };
+      }
+
+      if (!data.session) {
+        return {
+          success: true,
+          needsEmailConfirmation: true,
+          message:
+            'Enviamos um e-mail de confirmação. Verifique sua caixa de entrada para ativar sua conta antes de entrar.',
+        };
+      }
+
+      setStoredPassword(account.password);
+      applySession(data.session, businessData);
+
+      return { success: true };
+    },
+    [applySession],
+  );
 
   const updateAccount = useCallback((data: { name: string; email: string }) => {
     const emailError = getEmailError(data.email);
@@ -130,16 +244,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   }, []);
 
-  const changePassword = useCallback((currentPassword: string, newPassword: string) => {
-    if (currentPassword !== storedPassword) {
-      return { success: false, error: 'Senha atual incorreta.' };
-    }
-    const passwordError = getPasswordError(newPassword);
-    if (passwordError) return { success: false, error: passwordError };
-    setStoredPassword(newPassword);
-    setSaveSuccessMessage('Senha alterada com sucesso.');
-    return { success: true };
-  }, [storedPassword]);
+  const changePassword = useCallback(
+    (currentPassword: string, newPassword: string) => {
+      if (storedPassword && currentPassword !== storedPassword) {
+        return { success: false, error: 'Senha atual incorreta.' };
+      }
+      const passwordError = getPasswordError(newPassword);
+      if (passwordError) return { success: false, error: passwordError };
+      setStoredPassword(newPassword);
+      setSaveSuccessMessage('Senha alterada com sucesso.');
+      return { success: true };
+    },
+    [storedPassword],
+  );
 
   const clearSaveSuccessMessage = useCallback(() => {
     setSaveSuccessMessage(null);
@@ -147,7 +264,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      isAuthenticated,
+      isAuthenticated: session !== null,
+      isLoading,
+      session,
       user,
       business,
       saveSuccessMessage,
@@ -160,7 +279,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearSaveSuccessMessage,
     }),
     [
-      isAuthenticated,
+      session,
+      isLoading,
       user,
       business,
       saveSuccessMessage,
