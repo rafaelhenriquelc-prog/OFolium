@@ -184,6 +184,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         options: {
           data: {
             full_name: account.name.trim(),
+            business_name: businessData.name.trim(),
+            business_cnpj: normalizeCnpjDigits(businessData.cnpj),
+            business_phone: normalizePhoneDigits(businessData.phone),
           },
         },
       });
