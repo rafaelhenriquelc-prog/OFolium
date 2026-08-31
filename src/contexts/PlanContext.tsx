@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import { getPlanConfig, PRO_TRIAL_DAYS, type PlanTier } from '@/constants/plans';
+import { useAuth } from '@/contexts/AuthContext';
 
 type PlanContextValue = {
   tier: PlanTier;
@@ -18,17 +19,22 @@ type PlanContextValue = {
 const PlanContext = createContext<PlanContextValue | null>(null);
 
 export function PlanProvider({ children }: { children: ReactNode }) {
-  const [tier, setTier] = useState<PlanTier>('base');
-  const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(null);
+  const { business } = useAuth();
+  const [demoTier, setDemoTier] = useState<PlanTier | null>(null);
+  const [demoTrialEndsAt, setDemoTrialEndsAt] = useState<Date | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const tier = demoTier ?? business?.planTier ?? 'base';
+  const trialEndsAt =
+    demoTrialEndsAt ?? (business?.trialEndsAt ? new Date(business.trialEndsAt) : null);
 
   const plan = getPlanConfig(tier);
 
   const activateTrial = useCallback(() => {
     const endsAt = new Date();
     endsAt.setDate(endsAt.getDate() + PRO_TRIAL_DAYS);
-    setTier('pro');
-    setTrialEndsAt(endsAt);
+    setDemoTier('pro');
+    setDemoTrialEndsAt(endsAt);
     setSuccessMessage('Período de teste do OFolium Pro ativado com sucesso!');
   }, []);
 

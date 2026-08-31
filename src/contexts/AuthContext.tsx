@@ -9,12 +9,21 @@ import {
   type ReactNode,
 } from 'react';
 
-import { MOCK_BUSINESS } from '@/data/initialData';
+import type { PlanTier } from '@/constants/plans';
 import { supabase } from '@/lib/supabase';
 import { translateAuthError } from '@/utils/authErrors';
 import { getEmailError, getPasswordError } from '@/utils/validation';
 
-type BusinessData = {
+export type BusinessData = {
+  id: string;
+  name: string;
+  cnpj?: string;
+  phone?: string;
+  planTier: PlanTier;
+  trialEndsAt: string | null;
+};
+
+type BusinessInput = {
   name: string;
   cnpj?: string;
   phone?: string;
@@ -39,23 +48,38 @@ type RegisterResult =
   | { success: true; needsEmailConfirmation?: boolean; message?: string }
   | { success: false; error: string };
 
+type UpdateBusinessResult =
+  | { success: true }
+  | { success: false; errors?: Record<string, string>; error?: string };
+
 type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
+  isBusinessLoading: boolean;
+  businessError: string | null;
   session: Session | null;
   user: UserData | null;
   business: BusinessData | null;
   saveSuccessMessage: string | null;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
-  register: (account: RegisterAccountData, business: BusinessData) => Promise<RegisterResult>;
+  register: (account: RegisterAccountData, business: BusinessInput) => Promise<RegisterResult>;
   updateAccount: (data: { name: string; email: string }) => { success: boolean; emailError?: string };
-  updateBusiness: (data: BusinessData) => { success: boolean; errors?: Record<string, string> };
+  updateBusiness: (data: BusinessInput) => Promise<UpdateBusinessResult>;
   changePassword: (currentPassword: string, newPassword: string) => { success: boolean; error?: string };
   clearSaveSuccessMessage: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+type BusinessRow = {
+  id: string;
+  name: string;
+  cnpj: string | null;
+  phone: string | null;
+  plan_tier: string;
+  trial_ends_at: string | null;
+};
 
 function buildInitials(name: string): string {
   return name
@@ -72,6 +96,38 @@ function normalizeCnpjDigits(value?: string): string {
 
 function normalizePhoneDigits(value?: string): string {
   return (value ?? '').replace(/\D/g, '');
+}
+
+function mapBusinessRow(row: BusinessRow): BusinessData {
+  return {
+    id: row.id,
+    name: row.name,
+    cnpj: row.cnpj ?? undefined,
+    phone: row.phone ?? undefined,
+    planTier: row.plan_tier === 'pro' ? 'pro' : 'base',
+    trialEndsAt: row.trial_ends_at,
+  };
+}
+
+function translateBusinessError(message: string): string {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('permission denied') || normalized.includes('row-level security')) {
+    return 'Você não tem permissão para alterar estes dados.';
+  }
+
+  if (normalized.includes('duplicate key') || normalized.includes('unique constraint')) {
+    if (normalized.includes('cnpj')) {
+      return 'Este CNPJ já está cadastrado.';
+    }
+    return 'Já existe um negócio cadastrado para esta conta.';
+  }
+
+  if (normalized.includes('network') || normalized.includes('fetch')) {
+    return 'Não foi possível conectar. Verifique sua internet e tente novamente.';
+  }
+
+  return 'Não foi possível salvar os dados do negócio. Tente novamente.';
 }
 
 function mapSessionUser(session: Session): UserData {
@@ -94,30 +150,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserData | null>(null);
   const [business, setBusiness] = useState<BusinessData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBusinessLoading, setIsBusinessLoading] = useState(false);
+  const [businessError, setBusinessError] = useState<string | null>(null);
   const [storedPassword, setStoredPassword] = useState('');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
-  const applySession = useCallback(
-    (nextSession: Session | null, businessOverride?: BusinessData | null) => {
-      setSession(nextSession);
+  const applySession = useCallback((nextSession: Session | null) => {
+    setSession(nextSession);
 
-      if (!nextSession) {
-        setUser(null);
-        setBusiness(null);
-        return;
-      }
+    if (!nextSession) {
+      setUser(null);
+      setBusiness(null);
+      setBusinessError(null);
+      setIsBusinessLoading(false);
+      return;
+    }
 
-      setUser(mapSessionUser(nextSession));
-
-      if (businessOverride !== undefined) {
-        setBusiness(businessOverride);
-        return;
-      }
-
-      setBusiness((current) => current ?? MOCK_BUSINESS);
-    },
-    [],
-  );
+    setUser(mapSessionUser(nextSession));
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -146,6 +196,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, [applySession]);
+
+  useEffect(() => {
+    let mounted = true;
+    const userId = session?.user.id;
+
+    if (!userId) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setIsBusinessLoading(true);
+    setBusinessError(null);
+    setBusiness(null);
+
+    supabase
+      .from('businesses')
+      .select('id, name, cnpj, phone, plan_tier, trial_ends_at')
+      .eq('owner_id', userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!mounted) return;
+
+        setIsBusinessLoading(false);
+
+        if (error) {
+          setBusinessError('Não foi possível carregar os dados do negócio.');
+          setBusiness(null);
+          return;
+        }
+
+        setBusiness(data ? mapBusinessRow(data as BusinessRow) : null);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [session?.user.id]);
 
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -177,7 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession]);
 
   const register = useCallback(
-    async (account: RegisterAccountData, businessData: BusinessData): Promise<RegisterResult> => {
+    async (account: RegisterAccountData, businessData: BusinessInput): Promise<RegisterResult> => {
       const { data, error } = await supabase.auth.signUp({
         email: account.email.trim(),
         password: account.password,
@@ -205,7 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setStoredPassword(account.password);
-      applySession(data.session, businessData);
+      applySession(data.session);
 
       return { success: true };
     },
@@ -229,23 +317,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   }, []);
 
-  const updateBusiness = useCallback((data: BusinessData) => {
-    const errors: Record<string, string> = {};
-    if (!data.name.trim()) errors.name = 'Informe o nome do negócio.';
-    const cnpjDigits = normalizeCnpjDigits(data.cnpj);
-    if (cnpjDigits && cnpjDigits.length !== 14) errors.cnpj = 'Informe um CNPJ com 14 dígitos.';
-    const phoneDigits = normalizePhoneDigits(data.phone);
-    if (phoneDigits && phoneDigits.length < 10) errors.phone = 'Informe um telefone válido.';
-    if (Object.keys(errors).length > 0) return { success: false, errors };
+  const updateBusiness = useCallback(
+    async (data: BusinessInput): Promise<UpdateBusinessResult> => {
+      const errors: Record<string, string> = {};
+      if (!data.name.trim()) errors.name = 'Informe o nome do negócio.';
+      const cnpjDigits = normalizeCnpjDigits(data.cnpj);
+      if (cnpjDigits && cnpjDigits.length !== 14) errors.cnpj = 'Informe um CNPJ com 14 dígitos.';
+      const phoneDigits = normalizePhoneDigits(data.phone);
+      if (phoneDigits && phoneDigits.length < 10) errors.phone = 'Informe um telefone válido.';
+      if (Object.keys(errors).length > 0) return { success: false, errors };
 
-    setBusiness({
-      name: data.name.trim(),
-      cnpj: data.cnpj?.trim() || undefined,
-      phone: data.phone?.trim() || undefined,
-    });
-    setSaveSuccessMessage('Alterações salvas com sucesso.');
-    return { success: true };
-  }, []);
+      const ownerId = session?.user.id;
+      if (!ownerId) {
+        return { success: false, error: 'Sessão inválida. Faça login novamente.' };
+      }
+
+      const name = data.name.trim();
+      const cnpj = cnpjDigits || null;
+      const phone = phoneDigits || null;
+
+      if (business?.id) {
+        const { data: updated, error } = await supabase
+          .from('businesses')
+          .update({ name, cnpj, phone })
+          .eq('id', business.id)
+          .select('id, name, cnpj, phone, plan_tier, trial_ends_at')
+          .single();
+
+        if (error) {
+          return { success: false, error: translateBusinessError(error.message) };
+        }
+
+        setBusiness(mapBusinessRow(updated as BusinessRow));
+        setSaveSuccessMessage('Alterações salvas com sucesso.');
+        return { success: true };
+      }
+
+      const { data: inserted, error } = await supabase
+        .from('businesses')
+        .insert({
+          owner_id: ownerId,
+          name,
+          cnpj,
+          phone,
+          plan_tier: 'base',
+          trial_ends_at: null,
+        })
+        .select('id, name, cnpj, phone, plan_tier, trial_ends_at')
+        .single();
+
+      if (error) {
+        return { success: false, error: translateBusinessError(error.message) };
+      }
+
+      setBusiness(mapBusinessRow(inserted as BusinessRow));
+      setSaveSuccessMessage('Alterações salvas com sucesso.');
+      return { success: true };
+    },
+    [business, session],
+  );
 
   const changePassword = useCallback(
     (currentPassword: string, newPassword: string) => {
@@ -269,6 +399,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       isAuthenticated: session !== null,
       isLoading,
+      isBusinessLoading,
+      businessError,
       session,
       user,
       business,
@@ -284,6 +416,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       session,
       isLoading,
+      isBusinessLoading,
+      businessError,
       user,
       business,
       saveSuccessMessage,

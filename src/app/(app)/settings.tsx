@@ -1,6 +1,6 @@
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/mobile/Screen';
 
@@ -14,6 +14,7 @@ import { BrandColors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlan } from '@/contexts/PlanContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { formatCnpjInput, formatPhoneInput } from '@/utils/masks';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -21,6 +22,8 @@ export default function SettingsScreen() {
   const {
     user,
     business,
+    isBusinessLoading,
+    businessError,
     logout,
     updateAccount,
     updateBusiness,
@@ -32,13 +35,15 @@ export default function SettingsScreen() {
 
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
-  const [businessName, setBusinessName] = useState(business?.name ?? '');
-  const [cnpj, setCnpj] = useState(business?.cnpj ?? '');
-  const [phone, setPhone] = useState(business?.phone ?? '');
+  const [businessName, setBusinessName] = useState('');
+  const [cnpj, setCnpj] = useState('');
+  const [phone, setPhone] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [emailError, setEmailError] = useState<string>();
   const [businessErrors, setBusinessErrors] = useState<Record<string, string>>({});
+  const [businessSaveError, setBusinessSaveError] = useState<string>();
+  const [isSavingBusiness, setIsSavingBusiness] = useState(false);
   const [passwordError, setPasswordError] = useState<string>();
 
   useEffect(() => {
@@ -46,6 +51,19 @@ export default function SettingsScreen() {
     const timer = setTimeout(() => clearSaveSuccessMessage(), 4000);
     return () => clearTimeout(timer);
   }, [saveSuccessMessage, clearSaveSuccessMessage]);
+
+  useEffect(() => {
+    setName(user?.name ?? '');
+    setEmail(user?.email ?? '');
+  }, [user?.name, user?.email]);
+
+  useEffect(() => {
+    if (isBusinessLoading) return;
+
+    setBusinessName(business?.name ?? '');
+    setCnpj(business?.cnpj ? formatCnpjInput(business.cnpj) : '');
+    setPhone(business?.phone ? formatPhoneInput(business.phone) : '');
+  }, [business, isBusinessLoading]);
 
   const handleSaveAccount = () => {
     const result = updateAccount({ name, email });
@@ -56,13 +74,30 @@ export default function SettingsScreen() {
     setEmailError(undefined);
   };
 
-  const handleSaveBusiness = () => {
-    const result = updateBusiness({ name: businessName, cnpj, phone });
-    if (!result.success) {
-      setBusinessErrors(result.errors ?? {});
-      return;
+  const handleSaveBusiness = async () => {
+    if (isSavingBusiness || isBusinessLoading || businessError) return;
+
+    setBusinessSaveError(undefined);
+    setIsSavingBusiness(true);
+
+    try {
+      const result = await updateBusiness({ name: businessName, cnpj, phone });
+      if (!result.success) {
+        if (result.errors) {
+          setBusinessErrors(result.errors);
+          setBusinessSaveError(undefined);
+        } else {
+          setBusinessErrors({});
+          setBusinessSaveError(result.error);
+        }
+        return;
+      }
+
+      setBusinessErrors({});
+      setBusinessSaveError(undefined);
+    } finally {
+      setIsSavingBusiness(false);
     }
-    setBusinessErrors({});
   };
 
   const handleChangePassword = () => {
@@ -133,34 +168,51 @@ export default function SettingsScreen() {
 
         <Card style={styles.section}>
           <Text style={styles.sectionTitle}>Dados do negócio</Text>
-          <View style={styles.fields}>
-            <Input
-              label="Nome do negócio"
-              value={businessName}
-              onChangeText={setBusinessName}
-              error={businessErrors.name}
-            />
-            <MaskedInput
-              label="CNPJ"
-              optional
-              mask="cnpj"
-              value={cnpj}
-              onChangeText={setCnpj}
-              error={businessErrors.cnpj}
-            />
-            <Text style={styles.helperText}>
-              O CNPJ será utilizado apenas para identificar o negócio e seus demonstrativos gerenciais.
-            </Text>
-            <MaskedInput
-              label="Telefone"
-              optional
-              mask="phone"
-              value={phone}
-              onChangeText={setPhone}
-              error={businessErrors.phone}
-            />
-          </View>
-          <Button label="Salvar alterações" onPress={handleSaveBusiness} />
+          {isBusinessLoading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color={BrandColors.orange} />
+              <Text style={styles.loadingText}>Carregando dados do negócio...</Text>
+            </View>
+          ) : (
+            <>
+              {businessError && <Text style={styles.errorText}>{businessError}</Text>}
+              {businessSaveError && <Text style={styles.errorText}>{businessSaveError}</Text>}
+              <View style={styles.fields}>
+                <Input
+                  label="Nome do negócio"
+                  value={businessName}
+                  onChangeText={setBusinessName}
+                  error={businessErrors.name}
+                />
+                <MaskedInput
+                  label="CNPJ"
+                  optional
+                  mask="cnpj"
+                  value={cnpj}
+                  onChangeText={setCnpj}
+                  error={businessErrors.cnpj}
+                />
+                <Text style={styles.helperText}>
+                  O CNPJ será utilizado apenas para identificar o negócio e seus demonstrativos gerenciais.
+                </Text>
+                <MaskedInput
+                  label="Telefone"
+                  optional
+                  mask="phone"
+                  value={phone}
+                  onChangeText={setPhone}
+                  error={businessErrors.phone}
+                />
+              </View>
+              <Button
+                label="Salvar alterações"
+                loading={isSavingBusiness}
+                loadingLabel="Salvando..."
+                disabled={isBusinessLoading || !!businessError}
+                onPress={handleSaveBusiness}
+              />
+            </>
+          )}
         </Card>
 
         <Card style={styles.section}>
@@ -231,6 +283,21 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: BrandColors.textMuted,
     marginTop: -6,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: BrandColors.textSecondary,
+  },
+  errorText: {
+    fontSize: 13,
+    color: BrandColors.red,
+    textAlign: 'center',
   },
   planInfo: { gap: 12 },
   planBadge: {
