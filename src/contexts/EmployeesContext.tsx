@@ -72,7 +72,7 @@ export function EmployeesProvider({ children }: { children: ReactNode }) {
       const trimmedName = input.name.trim();
       const trimmedRole = input.role.trim();
 
-      if (!trimmedName || !trimmedRole) {
+      if (!trimmedName || !trimmedRole || !input.hireDate.trim()) {
         return { success: false, reason: 'invalid' };
       }
 

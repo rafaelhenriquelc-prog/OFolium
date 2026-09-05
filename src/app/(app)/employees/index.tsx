@@ -28,6 +28,7 @@ import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import type { Employee, EmployeeStatus } from '@/data/types';
 import { isEmployeeActive } from '@/utils/employee';
 import { formatCurrency } from '@/utils/format';
+import { validateHireDateInput } from '@/utils/dateInput';
 
 type Filter = 'Todos' | 'Ativos' | 'Inativos';
 
@@ -197,6 +198,8 @@ function AddEmployeeModal({
   const [baseSalary, setBaseSalary] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [hireDateError, setHireDateError] = useState('');
+  const [formError, setFormError] = useState('');
 
   const resetForm = () => {
     setName('');
@@ -206,6 +209,8 @@ function AddEmployeeModal({
     setBaseSalary('');
     setPhone('');
     setEmail('');
+    setHireDateError('');
+    setFormError('');
   };
 
   const handleClose = () => {
@@ -214,15 +219,38 @@ function AddEmployeeModal({
   };
 
   const handleSave = () => {
+    setFormError('');
+    setHireDateError('');
+
+    const trimmedName = name.trim();
+    const trimmedRole = role.trim();
+
+    if (!trimmedName || !trimmedRole) {
+      setFormError('Preencha nome e cargo antes de salvar.');
+      return;
+    }
+
+    const dateValidation = validateHireDateInput(hireDate);
+    if (!dateValidation.ok) {
+      setHireDateError(dateValidation.error);
+      setFormError(dateValidation.error);
+      return;
+    }
+
+    if (isSubmitting) {
+      setFormError('Aguarde o salvamento anterior terminar.');
+      return;
+    }
+
     const salaryDigits = baseSalary.replace(/\D/g, '');
     const parsedSalary = salaryDigits ? Number.parseInt(salaryDigits, 10) / 100 : 0;
 
     const result = addEmployee({
-      name,
-      role,
+      name: trimmedName,
+      role: trimmedRole,
       status,
       baseSalary: parsedSalary,
-      hireDate: hireDate || new Date().toISOString().slice(0, 10),
+      hireDate: dateValidation.iso,
       phone: phone || undefined,
       email: email || undefined,
     });
@@ -232,7 +260,15 @@ function AddEmployeeModal({
         resetForm();
         onClose();
         onLimitReached();
+        return;
       }
+
+      if (result.reason === 'busy') {
+        setFormError('Aguarde o salvamento anterior terminar.');
+        return;
+      }
+
+      setFormError('Não foi possível salvar o funcionário. Verifique os campos obrigatórios.');
       return;
     }
 
@@ -243,15 +279,40 @@ function AddEmployeeModal({
   return (
     <Modal title="Adicionar funcionário" visible={visible} onClose={handleClose} wide>
       <View style={styles.form}>
-        <Input label="Nome completo" placeholder="Nome do funcionário" value={name} onChangeText={setName} />
-        <Input label="Cargo" placeholder="Ex: Atendente" value={role} onChangeText={setRole} />
+        <Input
+          label="Nome completo"
+          placeholder="Nome do funcionário"
+          value={name}
+          onChangeText={(value) => {
+            setName(value);
+            if (formError) setFormError('');
+          }}
+        />
+        <Input
+          label="Cargo"
+          placeholder="Ex: Atendente"
+          value={role}
+          onChangeText={(value) => {
+            setRole(value);
+            if (formError) setFormError('');
+          }}
+        />
         <MaskedInput
           label="Salário base"
           mask="currency"
           value={baseSalary}
           onChangeText={setBaseSalary}
         />
-        <DateInput label="Data de admissão" value={hireDate} onChangeText={setHireDate} />
+        <DateInput
+          label="Data de admissão"
+          value={hireDate}
+          error={hireDateError}
+          onChangeText={(value) => {
+            setHireDate(value);
+            if (hireDateError) setHireDateError('');
+            if (formError) setFormError('');
+          }}
+        />
         <MaskedInput label="Telefone" optional mask="phone" value={phone} onChangeText={setPhone} />
         <Input label="E-mail" optional placeholder="email@exemplo.com" value={email} onChangeText={setEmail} />
 
@@ -274,6 +335,8 @@ function AddEmployeeModal({
             ))}
           </View>
         </View>
+
+        {formError ? <Text style={styles.formError}>{formError}</Text> : null}
 
         <View style={styles.modalActions}>
           <Button label="Cancelar" variant="outline" onPress={handleClose} />
@@ -408,4 +471,10 @@ const styles = StyleSheet.create({
   statusOptionTextActive: { color: BrandColors.orange, fontWeight: '600' },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   modalPrimary: { flex: 1 },
+  formError: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: BrandColors.red,
+    marginTop: 4,
+  },
 });

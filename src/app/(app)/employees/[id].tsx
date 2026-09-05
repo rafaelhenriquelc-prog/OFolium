@@ -21,6 +21,7 @@ import type { AbsenceSubtype, Movement, RecordType } from '@/data/types';
 import { ESTIMATE_DISCLAIMER, formatMinutesAsHours, sumMovementsByType } from '@/utils/calculations';
 import { competenceToLabel, CURRENT_COMPETENCE, getCompetenceFromDate } from '@/utils/competence';
 import { formatCurrency, formatDate } from '@/utils/format';
+import { formatHireDate } from '@/utils/dateInput';
 
 type Tab = 'Resumo' | 'Registros' | 'Fechamentos';
 
@@ -95,7 +96,7 @@ export default function EmployeeProfileScreen() {
           <Text style={styles.metaLabel}>Salário base</Text>
           <Text style={styles.metaValue}>{formatCurrency(employee.baseSalary)}</Text>
           <Text style={styles.metaLabel}>Admissão</Text>
-          <Text style={styles.metaValue}>{formatDate(employee.hireDate)}</Text>
+          <Text style={styles.metaValue}>{formatHireDate(employee.hireDate)}</Text>
         </View>
         <Button label="+ Registrar" onPress={() => setShowRegisterModal(true)} fullWidth={isCompactLayout} />
       </View>
