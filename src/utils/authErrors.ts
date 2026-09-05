@@ -9,7 +9,11 @@ export function translateAuthError(message: string): string {
     return 'Confirme seu e-mail antes de entrar.';
   }
 
-  if (normalized.includes('user already registered')) {
+  if (
+    normalized.includes('user already registered') ||
+    normalized.includes('already registered') ||
+    normalized.includes('email address is already')
+  ) {
     return 'Este e-mail já está cadastrado.';
   }
 
@@ -31,6 +35,20 @@ export function translateAuthError(message: string): string {
 
   if (normalized.includes('rate limit')) {
     return 'Muitas tentativas em sequência. Aguarde um momento e tente novamente.';
+  }
+
+  if (
+    normalized.includes('email link is invalid') ||
+    normalized.includes('otp_expired') ||
+    normalized.includes('token has expired') ||
+    normalized.includes('invalid or has expired') ||
+    normalized.includes('auth session missing')
+  ) {
+    return 'Link inválido ou expirado. Solicite uma nova recuperação de senha.';
+  }
+
+  if (normalized.includes('same password')) {
+    return 'A nova senha deve ser diferente da senha atual.';
   }
 
   return 'Não foi possível concluir a operação. Tente novamente.';

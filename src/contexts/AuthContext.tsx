@@ -12,7 +12,7 @@ import {
 import type { PlanTier } from '@/constants/plans';
 import { supabase } from '@/lib/supabase';
 import { translateAuthError } from '@/utils/authErrors';
-import { getEmailError, getPasswordError } from '@/utils/validation';
+import { getConfirmPasswordError, getEmailError, getNewPasswordError } from '@/utils/validation';
 
 export type BusinessData = {
   id: string;
@@ -52,6 +52,16 @@ type UpdateBusinessResult =
   | { success: true }
   | { success: false; errors?: Record<string, string>; error?: string };
 
+type PasswordResetRequestResult = { success: true } | { success: false; error: string };
+
+type CompletePasswordResetResult = { success: true } | { success: false; error: string };
+
+type ChangePasswordResult = { success: true } | { success: false; error: string };
+
+type UpdateAccountResult =
+  | { success: true; message: string; emailChangePending?: boolean }
+  | { success: false; emailError?: string; error?: string };
+
 type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -64,9 +74,15 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
   register: (account: RegisterAccountData, business: BusinessInput) => Promise<RegisterResult>;
-  updateAccount: (data: { name: string; email: string }) => { success: boolean; emailError?: string };
+  updateAccount: (data: { name: string; email: string }) => Promise<UpdateAccountResult>;
   updateBusiness: (data: BusinessInput) => Promise<UpdateBusinessResult>;
-  changePassword: (currentPassword: string, newPassword: string) => { success: boolean; error?: string };
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+    confirmPassword: string,
+  ) => Promise<ChangePasswordResult>;
+  requestPasswordReset: (email: string) => Promise<PasswordResetRequestResult>;
+  completePasswordReset: (password: string) => Promise<CompletePasswordResetResult>;
   clearSaveSuccessMessage: () => void;
 };
 
@@ -130,6 +146,36 @@ function translateBusinessError(message: string): string {
   return 'Não foi possível salvar os dados do negócio. Tente novamente.';
 }
 
+function getPasswordResetRedirectUrl(): string {
+  if (typeof globalThis !== 'undefined' && 'window' in globalThis) {
+    const origin = globalThis.window.location.origin;
+    if (origin) return `${origin}/reset-password`;
+  }
+
+  return 'https://o-folium.vercel.app/reset-password';
+}
+
+function translateProfileError(message: string): string {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('permission denied') || normalized.includes('row-level security')) {
+    return 'Você não tem permissão para alterar estes dados.';
+  }
+
+  if (normalized.includes('network') || normalized.includes('fetch')) {
+    return 'Não foi possível conectar. Verifique sua internet e tente novamente.';
+  }
+
+  return 'Não foi possível salvar o nome no perfil. Tente novamente.';
+}
+
+function isEmailAlreadyRegistered(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('already registered') || normalized.includes('email address is already')
+  );
+}
+
 function mapSessionUser(session: Session): UserData {
   const metadataName = session.user.user_metadata?.full_name;
   const name =
@@ -152,7 +198,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isBusinessLoading, setIsBusinessLoading] = useState(false);
   const [businessError, setBusinessError] = useState<string | null>(null);
-  const [storedPassword, setStoredPassword] = useState('');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
   const applySession = useCallback((nextSession: Session | null) => {
@@ -292,7 +337,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      setStoredPassword(account.password);
       applySession(data.session);
 
       return { success: true };
@@ -300,22 +344,101 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applySession],
   );
 
-  const updateAccount = useCallback((data: { name: string; email: string }) => {
-    const emailError = getEmailError(data.email);
-    if (emailError) return { success: false, emailError };
-    setUser((current) =>
-      current
-        ? {
-            ...current,
-            name: data.name.trim(),
-            email: data.email.trim(),
-            initials: buildInitials(data.name),
+  const updateAccount = useCallback(
+    async (data: { name: string; email: string }): Promise<UpdateAccountResult> => {
+      const trimmedName = data.name.trim();
+      const trimmedEmail = data.email.trim();
+
+      if (!trimmedName) {
+        return { success: false, error: 'Informe seu nome.' };
+      }
+
+      const emailValidationError = getEmailError(trimmedEmail);
+      if (emailValidationError) {
+        return { success: false, emailError: emailValidationError };
+      }
+
+      if (!session?.user.id) {
+        return { success: false, error: 'Sessão inválida. Faça login novamente.' };
+      }
+
+      const userId = session.user.id;
+      const currentEmail = session.user.email ?? '';
+      const currentName = mapSessionUser(session).name;
+      const nameChanged = trimmedName !== currentName;
+      const emailChanged = trimmedEmail.toLowerCase() !== currentEmail.toLowerCase();
+
+      if (!nameChanged && !emailChanged) {
+        const message = 'Nenhuma alteração para salvar.';
+        setSaveSuccessMessage(message);
+        return { success: true, message };
+      }
+
+      const emailConfirmationMessage =
+        'Enviamos um link de confirmação para o novo e-mail. Seu endereço atual continuará válido até a confirmação.';
+
+      if (nameChanged) {
+        const { error: authError } = await supabase.auth.updateUser({
+          data: { full_name: trimmedName },
+          ...(emailChanged ? { email: trimmedEmail } : {}),
+        });
+
+        if (authError) {
+          if (isEmailAlreadyRegistered(authError.message)) {
+            return { success: false, emailError: translateAuthError(authError.message) };
           }
-        : current,
-    );
-    setSaveSuccessMessage('Alterações salvas com sucesso.');
-    return { success: true };
-  }, []);
+          return { success: false, error: translateAuthError(authError.message) };
+        }
+
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ full_name: trimmedName })
+          .eq('id', userId);
+
+        if (profileError) {
+          return { success: false, error: translateProfileError(profileError.message) };
+        }
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          applySession(sessionData.session);
+        } else {
+          setUser((current) =>
+            current
+              ? {
+                  ...current,
+                  name: trimmedName,
+                  initials: buildInitials(trimmedName),
+                }
+              : current,
+          );
+        }
+
+        if (emailChanged) {
+          const message = `Nome atualizado. ${emailConfirmationMessage}`;
+          setSaveSuccessMessage(message);
+          return { success: true, message, emailChangePending: true };
+        }
+
+        const message = 'Alterações salvas com sucesso.';
+        setSaveSuccessMessage(message);
+        return { success: true, message };
+      }
+
+      const { error: authError } = await supabase.auth.updateUser({ email: trimmedEmail });
+
+      if (authError) {
+        if (isEmailAlreadyRegistered(authError.message)) {
+          return { success: false, emailError: translateAuthError(authError.message) };
+        }
+        return { success: false, error: translateAuthError(authError.message) };
+      }
+
+      setSaveSuccessMessage(emailConfirmationMessage);
+      return { success: true, message: emailConfirmationMessage, emailChangePending: true };
+    },
+    [session, applySession],
+  );
 
   const updateBusiness = useCallback(
     async (data: BusinessInput): Promise<UpdateBusinessResult> => {
@@ -378,17 +501,85 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const changePassword = useCallback(
-    (currentPassword: string, newPassword: string) => {
-      if (storedPassword && currentPassword !== storedPassword) {
-        return { success: false, error: 'Senha atual incorreta.' };
+    async (
+      currentPassword: string,
+      newPassword: string,
+      confirmPassword: string,
+    ): Promise<ChangePasswordResult> => {
+      if (!currentPassword.trim()) {
+        return { success: false, error: 'Informe sua senha atual.' };
       }
-      const passwordError = getPasswordError(newPassword);
-      if (passwordError) return { success: false, error: passwordError };
-      setStoredPassword(newPassword);
+
+      const newPasswordError = getNewPasswordError(newPassword);
+      if (newPasswordError) return { success: false, error: newPasswordError };
+
+      const confirmPasswordError = getConfirmPasswordError(newPassword, confirmPassword);
+      if (confirmPasswordError) return { success: false, error: confirmPasswordError };
+
+      const email = session?.user.email;
+      if (!email) {
+        return { success: false, error: 'Sessão inválida. Faça login novamente.' };
+      }
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password: currentPassword,
+      });
+
+      if (authError) {
+        if (authError.message.toLowerCase().includes('invalid login credentials')) {
+          return { success: false, error: 'Senha atual incorreta.' };
+        }
+        return { success: false, error: translateAuthError(authError.message) };
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+
+      if (updateError) {
+        return { success: false, error: translateAuthError(updateError.message) };
+      }
+
       setSaveSuccessMessage('Senha alterada com sucesso.');
       return { success: true };
     },
-    [storedPassword],
+    [session],
+  );
+
+  const requestPasswordReset = useCallback(async (email: string): Promise<PasswordResetRequestResult> => {
+    const emailError = getEmailError(email);
+    if (emailError) return { success: false, error: emailError };
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: getPasswordResetRedirectUrl(),
+    });
+
+    if (error) {
+      return { success: false, error: translateAuthError(error.message) };
+    }
+
+    return { success: true };
+  }, []);
+
+  const completePasswordReset = useCallback(
+    async (password: string): Promise<CompletePasswordResetResult> => {
+      const passwordError = getNewPasswordError(password);
+      if (passwordError) return { success: false, error: passwordError };
+
+      const { error } = await supabase.auth.updateUser({ password });
+
+      if (error) {
+        return { success: false, error: translateAuthError(error.message) };
+      }
+
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        console.warn('Erro ao encerrar sessão após redefinição de senha.');
+      }
+
+      applySession(null);
+      return { success: true };
+    },
+    [applySession],
   );
 
   const clearSaveSuccessMessage = useCallback(() => {
@@ -411,6 +602,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateAccount,
       updateBusiness,
       changePassword,
+      requestPasswordReset,
+      completePasswordReset,
       clearSaveSuccessMessage,
     }),
     [
@@ -427,6 +620,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateAccount,
       updateBusiness,
       changePassword,
+      requestPasswordReset,
+      completePasswordReset,
       clearSaveSuccessMessage,
     ],
   );

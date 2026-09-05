@@ -6,18 +6,39 @@ import { AuthLayout } from '@/components/AuthLayout';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { BrandColors } from '@/constants/colors';
+import { useAuth } from '@/contexts/AuthContext';
 import { getEmailError } from '@/utils/validation';
 
 export default function ForgotPasswordScreen() {
+  const { requestPasswordReset } = useAuth();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [emailError, setEmailError] = useState<string>();
+  const [formError, setFormError] = useState<string>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSend = () => {
+  const handleSend = async () => {
+    if (isSubmitting) return;
+
     const nextEmailError = getEmailError(email);
     setEmailError(nextEmailError);
+    setFormError(undefined);
+
     if (nextEmailError) return;
-    setSent(true);
+
+    setIsSubmitting(true);
+
+    try {
+      const result = await requestPasswordReset(email);
+      if (!result.success) {
+        setFormError(result.error);
+        return;
+      }
+
+      setSent(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -31,10 +52,13 @@ export default function ForgotPasswordScreen() {
       {sent ? (
         <View style={styles.successBox}>
           <Text style={styles.successIcon}>✓</Text>
-          <Text style={styles.successText}>Enviamos as instruções para o seu e-mail.</Text>
+          <Text style={styles.successText}>
+            Se existir uma conta com este e-mail, enviaremos as instruções para redefinir sua senha.
+          </Text>
         </View>
       ) : (
         <>
+          {formError && <Text style={styles.formError}>{formError}</Text>}
           <Input
             label="E-mail"
             placeholder="seu@email.com"
@@ -44,10 +68,17 @@ export default function ForgotPasswordScreen() {
             onChangeText={(text) => {
               setEmail(text);
               if (emailError) setEmailError(undefined);
+              if (formError) setFormError(undefined);
             }}
             error={emailError}
           />
-          <Button label="Enviar instruções" fullWidth onPress={handleSend} />
+          <Button
+            label="Enviar instruções"
+            fullWidth
+            loading={isSubmitting}
+            loadingLabel="Enviando..."
+            onPress={handleSend}
+          />
         </>
       )}
 
@@ -63,6 +94,11 @@ export default function ForgotPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
+  formError: {
+    fontSize: 13,
+    color: BrandColors.red,
+    textAlign: 'center',
+  },
   successBox: {
     alignItems: 'center',
     gap: 12,

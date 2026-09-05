@@ -40,11 +40,15 @@ export default function SettingsScreen() {
   const [phone, setPhone] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [emailError, setEmailError] = useState<string>();
+  const [accountSaveError, setAccountSaveError] = useState<string>();
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [businessErrors, setBusinessErrors] = useState<Record<string, string>>({});
   const [businessSaveError, setBusinessSaveError] = useState<string>();
   const [isSavingBusiness, setIsSavingBusiness] = useState(false);
   const [passwordError, setPasswordError] = useState<string>();
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   useEffect(() => {
     if (!saveSuccessMessage) return;
@@ -65,13 +69,32 @@ export default function SettingsScreen() {
     setPhone(business?.phone ? formatPhoneInput(business.phone) : '');
   }, [business, isBusinessLoading]);
 
-  const handleSaveAccount = () => {
-    const result = updateAccount({ name, email });
-    if (!result.success) {
-      setEmailError(result.emailError);
-      return;
-    }
+  const handleSaveAccount = async () => {
+    if (isSavingAccount) return;
+
+    setAccountSaveError(undefined);
     setEmailError(undefined);
+    setIsSavingAccount(true);
+
+    try {
+      const result = await updateAccount({ name, email });
+      if (!result.success) {
+        if (result.emailError) {
+          setEmailError(result.emailError);
+          setAccountSaveError(undefined);
+        } else {
+          setEmailError(undefined);
+          setAccountSaveError(result.error);
+        }
+        return;
+      }
+
+      if (result.emailChangePending) {
+        setEmail(user?.email ?? '');
+      }
+    } finally {
+      setIsSavingAccount(false);
+    }
   };
 
   const handleSaveBusiness = async () => {
@@ -100,15 +123,25 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleChangePassword = () => {
-    const result = changePassword(currentPassword, newPassword);
-    if (!result.success) {
-      setPasswordError(result.error);
-      return;
-    }
+  const handleChangePassword = async () => {
+    if (isChangingPassword) return;
+
     setPasswordError(undefined);
-    setCurrentPassword('');
-    setNewPassword('');
+    setIsChangingPassword(true);
+
+    try {
+      const result = await changePassword(currentPassword, newPassword, confirmPassword);
+      if (!result.success) {
+        setPasswordError(result.error);
+        return;
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -137,12 +170,20 @@ export default function SettingsScreen() {
               onChangeText={(text) => {
                 setEmail(text);
                 if (emailError) setEmailError(undefined);
+                if (accountSaveError) setAccountSaveError(undefined);
               }}
               keyboardType="email-address"
               error={emailError}
             />
+            {accountSaveError && <Text style={styles.errorText}>{accountSaveError}</Text>}
           </View>
-          <Button label="Salvar alterações" onPress={handleSaveAccount} />
+          <Button
+            label="Salvar alterações"
+            loading={isSavingAccount}
+            loadingLabel="Salvando..."
+            disabled={isSavingAccount}
+            onPress={handleSaveAccount}
+          />
         </Card>
 
         <Card style={styles.section}>
@@ -151,7 +192,10 @@ export default function SettingsScreen() {
             <PasswordInput
               label="Senha atual"
               value={currentPassword}
-              onChangeText={setCurrentPassword}
+              onChangeText={(text) => {
+                setCurrentPassword(text);
+                if (passwordError) setPasswordError(undefined);
+              }}
             />
             <PasswordInput
               label="Nova senha"
@@ -160,10 +204,24 @@ export default function SettingsScreen() {
                 setNewPassword(text);
                 if (passwordError) setPasswordError(undefined);
               }}
-              error={passwordError}
             />
+            <PasswordInput
+              label="Confirmar nova senha"
+              value={confirmPassword}
+              onChangeText={(text) => {
+                setConfirmPassword(text);
+                if (passwordError) setPasswordError(undefined);
+              }}
+            />
+            {passwordError && <Text style={styles.errorText}>{passwordError}</Text>}
           </View>
-          <Button label="Alterar senha" variant="outline" onPress={handleChangePassword} />
+          <Button
+            label="Alterar senha"
+            variant="outline"
+            loading={isChangingPassword}
+            loadingLabel="Alterando..."
+            onPress={handleChangePassword}
+          />
         </Card>
 
         <Card style={styles.section}>

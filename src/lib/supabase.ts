@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 import './installLocalStorage';
 
@@ -24,11 +25,21 @@ const authStorage =
     ? globalThis.localStorage
     : undefined;
 
+const isWebBrowser =
+  Platform.OS === 'web' &&
+  typeof globalThis !== 'undefined' &&
+  'window' in globalThis;
+
+export const isInitialRecoveryUrl =
+  isWebBrowser &&
+  (globalThis.window.location.hash.includes('type=recovery') ||
+    globalThis.window.location.search.includes('code='));
+
 export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
     ...(authStorage ? { storage: authStorage } : {}),
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: isWebBrowser,
   },
 });
