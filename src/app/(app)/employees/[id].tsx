@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/mobile/Screen';
@@ -8,20 +8,31 @@ import { Screen } from '@/components/mobile/Screen';
 import { Badge, getStatusVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { DateInput } from '@/components/ui/DateInput';
+import { Input } from '@/components/ui/Input';
+import { MaskedInput } from '@/components/ui/MaskedInput';
 import { Modal } from '@/components/ui/Modal';
 import { BrandColors } from '@/constants/colors';
 import { STAT_ICONS } from '@/constants/statIcons';
 import { useAppData } from '@/contexts/AppDataContext';
 import { useEmployees } from '@/contexts/EmployeesContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
-import type { Movement, RecordType } from '@/data/types';
+import type { AbsenceSubtype, Movement, RecordType } from '@/data/types';
 import { ESTIMATE_DISCLAIMER, formatMinutesAsHours, sumMovementsByType } from '@/utils/calculations';
-import { competenceToLabel, CURRENT_COMPETENCE } from '@/utils/competence';
+import { competenceToLabel, CURRENT_COMPETENCE, getCompetenceFromDate } from '@/utils/competence';
 import { formatCurrency, formatDate } from '@/utils/format';
 
 type Tab = 'Resumo' | 'Registros' | 'Fechamentos';
 
 const recordTypes: RecordType[] = ['Hora extra', 'Falta', 'Vale', 'Adicional', 'Desconto'];
+
+const absenceSubtypes: AbsenceSubtype[] = [
+  'Falta injustificada',
+  'Falta justificada',
+  'Atestado',
+  'Atraso',
+  'Saída antecipada',
+];
 
 const recordTypeColors: Record<RecordType, string> = {
   'Hora extra': BrandColors.orange,
@@ -48,6 +59,7 @@ export default function EmployeeProfileScreen() {
   const employee = getEmployeeById(id ?? '');
   const [activeTab, setActiveTab] = useState<Tab>('Resumo');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [recordFormType, setRecordFormType] = useState<RecordType | null>(null);
 
   if (!employee) {
     return (
@@ -107,7 +119,21 @@ export default function EmployeeProfileScreen() {
         <ClosingsTab employeeId={employee.id} employeeName={employee.name} />
       )}
 
-      <RegisterModal visible={showRegisterModal} onClose={() => setShowRegisterModal(false)} />
+      <RegisterModal
+        visible={showRegisterModal}
+        onClose={() => setShowRegisterModal(false)}
+        onSelectType={(type) => {
+          setShowRegisterModal(false);
+          setRecordFormType(type);
+        }}
+      />
+      <RecordFormModal
+        visible={recordFormType !== null}
+        type={recordFormType}
+        employeeId={employee.id}
+        employeeName={employee.name}
+        onClose={() => setRecordFormType(null)}
+      />
     </Screen>
   );
 }
@@ -255,7 +281,15 @@ function ClosingLine({
   );
 }
 
-function RegisterModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function RegisterModal({
+  visible,
+  onClose,
+  onSelectType,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelectType: (type: RecordType) => void;
+}) {
   return (
     <Modal title="Registrar" visible={visible} onClose={onClose}>
       <Text style={styles.registerSubtitle}>Selecione o tipo de registro:</Text>
@@ -264,7 +298,7 @@ function RegisterModal({ visible, onClose }: { visible: boolean; onClose: () => 
           <Pressable
             key={type}
             style={styles.registerOption}
-            onPress={onClose}>
+            onPress={() => onSelectType(type)}>
             <View
               style={[
                 styles.registerOptionDot,
@@ -274,6 +308,170 @@ function RegisterModal({ visible, onClose }: { visible: boolean; onClose: () => 
             <Text style={styles.registerOptionText}>{type}</Text>
           </Pressable>
         ))}
+      </View>
+    </Modal>
+  );
+}
+
+function parseCurrencyAmount(value: string): number {
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number.parseInt(digits, 10) / 100 : 0;
+}
+
+function RecordFormModal({
+  visible,
+  type,
+  employeeId,
+  employeeName,
+  onClose,
+}: {
+  visible: boolean;
+  type: RecordType | null;
+  employeeId: string;
+  employeeName: string;
+  onClose: () => void;
+}) {
+  const { addMovement } = useAppData();
+  const [occurrenceDate, setOccurrenceDate] = useState('');
+  const [duration, setDuration] = useState('');
+  const [amount, setAmount] = useState('');
+  const [absenceSubtype, setAbsenceSubtype] = useState<AbsenceSubtype>('Falta injustificada');
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (!visible) return;
+    setOccurrenceDate('');
+    setDuration('');
+    setAmount('');
+    setAbsenceSubtype('Falta injustificada');
+    setNotes('');
+  }, [visible, type]);
+
+  if (!type) return null;
+
+  const handleClose = () => {
+    onClose();
+  };
+
+  const handleSave = () => {
+    const date = occurrenceDate || new Date().toISOString().slice(0, 10);
+    const parsedAmount = parseCurrencyAmount(amount);
+    let value = '';
+    let movementAmount: number | undefined;
+
+    switch (type) {
+      case 'Hora extra':
+        value = duration.trim() || '0h';
+        movementAmount = parsedAmount || undefined;
+        break;
+      case 'Falta':
+        value = '1 dia';
+        movementAmount = parsedAmount || undefined;
+        break;
+      case 'Vale':
+      case 'Adicional':
+      case 'Desconto':
+        movementAmount = parsedAmount;
+        value = formatCurrency(parsedAmount);
+        break;
+    }
+
+    const movement: Omit<Movement, 'id' | 'createdAt'> = {
+      employeeId,
+      employeeName,
+      type,
+      occurrenceDate: date,
+      competence: getCompetenceFromDate(date),
+      value,
+      amount: movementAmount,
+      notes: notes.trim() || undefined,
+    };
+
+    if (type === 'Falta') {
+      movement.absenceSubtype = absenceSubtype;
+      movement.estimatedDiscount =
+        absenceSubtype === 'Falta injustificada' ||
+        absenceSubtype === 'Atraso' ||
+        absenceSubtype === 'Saída antecipada';
+      if (movement.estimatedDiscount && movementAmount) {
+        movement.formula = 'Salário-base ÷ 30';
+      }
+    }
+
+    addMovement(movement);
+    handleClose();
+  };
+
+  const showCurrencyField = type === 'Vale' || type === 'Adicional' || type === 'Desconto';
+  const showOptionalCurrencyField = type === 'Hora extra' || type === 'Falta';
+
+  return (
+    <Modal title={`Registrar ${type}`} visible={visible} onClose={handleClose}>
+      <View style={styles.form}>
+        <DateInput label="Data do registro" value={occurrenceDate} onChangeText={setOccurrenceDate} />
+
+        {type === 'Hora extra' && (
+          <Input
+            label="Duração"
+            placeholder="Ex: 2h30"
+            value={duration}
+            onChangeText={setDuration}
+          />
+        )}
+
+        {type === 'Falta' && (
+          <View style={styles.subtypeField}>
+            <Text style={styles.subtypeLabel}>Tipo de falta</Text>
+            <View style={styles.subtypeOptions}>
+              {absenceSubtypes.map((subtype) => (
+                <Pressable
+                  key={subtype}
+                  style={[
+                    styles.subtypeOption,
+                    absenceSubtype === subtype && styles.subtypeOptionActive,
+                  ]}
+                  onPress={() => setAbsenceSubtype(subtype)}>
+                  <Text
+                    style={[
+                      styles.subtypeOptionText,
+                      absenceSubtype === subtype && styles.subtypeOptionTextActive,
+                    ]}>
+                    {subtype}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {showCurrencyField && (
+          <MaskedInput label="Valor" mask="currency" value={amount} onChangeText={setAmount} />
+        )}
+
+        {showOptionalCurrencyField && (
+          <MaskedInput
+            label="Valor estimado"
+            optional
+            mask="currency"
+            value={amount}
+            onChangeText={setAmount}
+          />
+        )}
+
+        <Input
+          label="Observações"
+          optional
+          placeholder="Detalhes adicionais"
+          value={notes}
+          onChangeText={setNotes}
+        />
+
+        <View style={styles.modalActions}>
+          <Button label="Cancelar" variant="outline" onPress={handleClose} />
+          <View style={styles.modalPrimary}>
+            <Button label="Salvar registro" fullWidth onPress={handleSave} />
+          </View>
+        </View>
       </View>
     </Modal>
   );
@@ -412,4 +610,24 @@ const styles = StyleSheet.create({
   },
   registerOptionDot: { width: 10, height: 10, borderRadius: 5 },
   registerOptionText: { fontSize: 14, fontWeight: '600', color: BrandColors.textPrimary },
+  form: { gap: 14 },
+  subtypeField: { gap: 8 },
+  subtypeLabel: { fontSize: 13, fontWeight: '600', color: BrandColors.textPrimary },
+  subtypeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  subtypeOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: BrandColors.border,
+    backgroundColor: BrandColors.white,
+  },
+  subtypeOptionActive: {
+    backgroundColor: BrandColors.orangeLight,
+    borderColor: 'rgba(255, 92, 0, 0.25)',
+  },
+  subtypeOptionText: { fontSize: 12, color: BrandColors.textSecondary, fontWeight: '500' },
+  subtypeOptionTextActive: { color: BrandColors.orange, fontWeight: '600' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  modalPrimary: { flex: 1 },
 });
