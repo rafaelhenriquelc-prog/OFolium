@@ -39,6 +39,7 @@ export default function ClosingsScreen() {
 
   const [selectedClosing, setSelectedClosing] = useState<EmployeeClosingSummary | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showPendingModal, setShowPendingModal] = useState(false);
   const [showReopenModal, setShowReopenModal] = useState(false);
   const [reopenReason, setReopenReason] = useState('');
 
@@ -48,8 +49,17 @@ export default function ClosingsScreen() {
     : closingSummaries;
 
   const reviewed = closingSummaries.filter((item) => item.reviewStatus === 'Revisado').length;
-  const pending = closingSummaries.filter((item) => item.reviewStatus !== 'Revisado').length;
+  const pendingSummaries = closingSummaries.filter((item) => item.reviewStatus !== 'Revisado');
+  const pending = pendingSummaries.length;
   const allReviewed = pending === 0 && closingSummaries.length > 0;
+
+  const handleCloseCompetencePress = () => {
+    if (!allReviewed) {
+      setShowPendingModal(true);
+      return;
+    }
+    setShowCloseModal(true);
+  };
 
   const handleCloseCompetence = () => {
     if (!isPro) return;
@@ -84,8 +94,7 @@ export default function ClosingsScreen() {
             <Button
               label="Fechar competência"
               variant="secondary"
-              disabled={!allReviewed}
-              onPress={() => setShowCloseModal(true)}
+              onPress={handleCloseCompetencePress}
             />
           ) : (
             <ProLockedButton label="Fechar competência" feature="close_competence" />
@@ -171,6 +180,33 @@ export default function ClosingsScreen() {
           setSelectedClosing(null);
         }}
       />
+
+      <Modal
+        title="Revisão pendente"
+        visible={showPendingModal}
+        onClose={() => setShowPendingModal(false)}>
+        <Text style={styles.modalText}>
+          {pending === 1
+            ? 'Ainda existe 1 funcionário pendente de revisão nesta competência.'
+            : `Ainda existem ${pending} funcionários pendentes de revisão nesta competência.`}
+        </Text>
+        <Text style={styles.modalText}>
+          Marque todos como revisados na tabela ou no detalhe de cada fechamento antes de concluir a
+          competência.
+        </Text>
+        {pendingSummaries.length > 0 && (
+          <View style={styles.pendingList}>
+            {pendingSummaries.map((item) => (
+              <Text key={item.employeeId} style={styles.pendingItem}>
+                • {item.employeeName}
+              </Text>
+            ))}
+          </View>
+        )}
+        <View style={styles.modalActions}>
+          <Button label="Entendi" fullWidth onPress={() => setShowPendingModal(false)} />
+        </View>
+      </Modal>
 
       <Modal
         title={`Fechar ${competenceLabel.toLowerCase()}?`}
@@ -372,4 +408,6 @@ const styles = StyleSheet.create({
   },
   modalActions: { flexDirection: 'row', gap: 12 },
   modalPrimary: { flex: 1 },
+  pendingList: { gap: 6, marginBottom: 20 },
+  pendingItem: { fontSize: 14, color: BrandColors.textPrimary, fontWeight: '500' },
 });
