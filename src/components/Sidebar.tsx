@@ -5,43 +5,100 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { NavIcon } from '@/components/navigation/NavIcon';
-import { BrandColors } from '@/constants/colors';
+import { BrandColors, Shadows } from '@/constants/colors';
+import {
+  SIDEBAR_EDGE_TOGGLE,
+  SIDEBAR_WIDTH_COLLAPSED,
+  SIDEBAR_WIDTH_EXPANDED,
+} from '@/constants/layout';
 import { isNavItemActive, MAIN_DESKTOP_NAV, SECONDARY_NAV, type NavItem } from '@/constants/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEmployees } from '@/contexts/EmployeesContext';
 import { usePlan } from '@/contexts/PlanContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 
-function NavButton({ item, active }: { item: NavItem; active: boolean }) {
+type SidebarProps = {
+  collapsed: boolean;
+  onToggle: () => void;
+};
+
+function NavButton({
+  item,
+  active,
+  collapsed,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+}) {
   const router = useRouter();
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.navItem, active && styles.navItemActive, pressed && styles.navItemPressed]}
-      onPress={() => router.push(item.href as Href)}>
-      {active && <View style={styles.activeIndicator} />}
+      style={({ pressed }) => [
+        styles.navItem,
+        collapsed && styles.navItemCollapsed,
+        active && styles.navItemActive,
+        pressed && styles.navItemPressed,
+      ]}
+      onPress={() => router.push(item.href as Href)}
+      accessibilityRole="button"
+      accessibilityLabel={item.label}
+      accessibilityState={{ selected: active }}>
+      {active && <View style={[styles.activeIndicator, collapsed && styles.activeIndicatorCollapsed]} />}
       <View style={styles.navIconWrap}>
         <NavIcon type={item.icon} active={active} />
       </View>
-      <Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text>
+      {!collapsed && <Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text>}
     </Pressable>
   );
 }
 
-export function Sidebar() {
+function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.edgeToggle, pressed && styles.edgeTogglePressed]}
+      onPress={onToggle}
+      accessibilityRole="button"
+      accessibilityLabel={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>
+      <Text style={styles.edgeToggleArrow} accessibilityElementsHidden importantForAccessibility="no">
+        {collapsed ? '›' : '‹'}
+      </Text>
+    </Pressable>
+  );
+}
+
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { isCompactLayout } = useResponsiveLayout();
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const chevronRotation = useSharedValue(0);
+  const sidebarWidth = useSharedValue(collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED);
+
+  useEffect(() => {
+    sidebarWidth.value = withTiming(collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED, {
+      duration: 220,
+    });
+  }, [collapsed, sidebarWidth]);
 
   useEffect(() => {
     chevronRotation.value = withTiming(menuOpen ? 180 : 0, { duration: 200 });
   }, [menuOpen, chevronRotation]);
 
+  useEffect(() => {
+    if (collapsed) {
+      setMenuOpen(false);
+    }
+  }, [collapsed]);
+
   const chevronAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
+
+  const sidebarAnimatedStyle = useAnimatedStyle(() => ({
+    width: sidebarWidth.value,
   }));
 
   const { activeCount } = useEmployees();
@@ -54,6 +111,7 @@ export function Sidebar() {
   const displayName = user?.name || 'Lucas Almeida';
   const displayRole = user?.role || 'Administrador';
   const displayInitials = user?.initials || 'LA';
+  const isProRouteActive = pathname === '/pro';
 
   const handleLogout = async () => {
     setMenuOpen(false);
@@ -64,90 +122,171 @@ export function Sidebar() {
   const planPercent = Math.round((activeCount / activeLimit) * 100);
 
   return (
-    <View style={styles.sidebar}>
-      <Pressable
-        style={({ pressed }) => [styles.logoContainer, pressed && styles.logoPressed]}
-        onPress={() => router.push('/dashboard' as Href)}
-        accessibilityRole="button"
-        accessibilityLabel="Ir para o Painel">
-        <Image
-          source={require('@/assets/images/logo-ofolium.png')}
-          style={styles.logo}
-          contentFit="contain"
-        />
-      </Pressable>
-
-      <View style={styles.navSection}>
-        {MAIN_DESKTOP_NAV.map((item) => (
-          <NavButton key={item.label} item={item} active={isNavItemActive(pathname, item)} />
-        ))}
-      </View>
-
-      <View style={styles.divider} />
-
-      <View style={styles.navSection}>
-        {SECONDARY_NAV.map((item) => (
-          <NavButton key={item.label} item={item} active={isNavItemActive(pathname, item)} />
-        ))}
-      </View>
-
-      <View style={styles.bottomSection}>
-        <View style={styles.planCard}>
-          <Text style={styles.planTitle}>{planName}</Text>
-          <Text style={styles.planUsage}>
-            {activeCount} de {activeLimit} funcionários ativos
-          </Text>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${Math.min(planPercent, 100)}%` }]} />
-          </View>
+    <Animated.View style={[styles.sidebarShell, sidebarAnimatedStyle]}>
+      <View style={styles.sidebar}>
+        {!collapsed ? (
           <Pressable
-            style={({ pressed }) => [styles.proLink, pressed && styles.proLinkPressed]}
-            onPress={() => router.push('/pro' as Href)}>
-            <Text style={styles.proLinkText}>{sidebarLinkLabel}</Text>
+            style={({ pressed }) => [styles.logoContainer, pressed && styles.logoPressed]}
+            onPress={() => router.push('/dashboard' as Href)}
+            accessibilityRole="button"
+            accessibilityLabel="Ir para o Painel">
+            <Image
+              source={require('@/assets/images/logo-ofolium.png')}
+              style={styles.logo}
+              contentFit="contain"
+            />
           </Pressable>
+        ) : null}
+
+        <View style={[styles.navSection, collapsed && styles.navSectionCollapsed]}>
+          {MAIN_DESKTOP_NAV.map((item) => (
+            <NavButton
+              key={item.label}
+              item={item}
+              active={isNavItemActive(pathname, item)}
+              collapsed={collapsed}
+            />
+          ))}
         </View>
 
-        <View style={styles.userMenuWrapper}>
-          {menuOpen && (
-            <View style={styles.userMenu}>
+        {!collapsed && <View style={styles.divider} />}
+
+        <View style={[styles.navSection, collapsed && styles.navSectionCollapsed]}>
+          {SECONDARY_NAV.map((item) => (
+            <NavButton
+              key={item.label}
+              item={item}
+              active={isNavItemActive(pathname, item)}
+              collapsed={collapsed}
+            />
+          ))}
+        </View>
+
+        <View style={[styles.bottomSection, collapsed && styles.bottomSectionCollapsed]}>
+          {collapsed ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.proIconButton,
+                isProRouteActive && styles.proIconButtonActive,
+                pressed && styles.proIconButtonPressed,
+              ]}
+              onPress={() => router.push('/pro' as Href)}
+              accessibilityRole="button"
+              accessibilityLabel={sidebarLinkLabel}
+              accessibilityState={{ selected: isProRouteActive }}>
+              <NavIcon type="chart" active={isProRouteActive} />
+            </Pressable>
+          ) : (
+            <View style={styles.planCard}>
+              <Text style={styles.planTitle}>{planName}</Text>
+              <Text style={styles.planUsage}>
+                {activeCount} de {activeLimit} funcionários ativos
+              </Text>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${Math.min(planPercent, 100)}%` }]} />
+              </View>
               <Pressable
-                style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
-                onPress={handleLogout}>
-                <Text style={styles.userMenuItemText}>Sair</Text>
+                style={({ pressed }) => [styles.proLink, pressed && styles.proLinkPressed]}
+                onPress={() => router.push('/pro' as Href)}>
+                <Text style={styles.proLinkText}>{sidebarLinkLabel}</Text>
               </Pressable>
             </View>
           )}
 
-          <Pressable
-            style={({ pressed }) => [styles.userSection, pressed && styles.userSectionPressed]}
-            onPress={() => setMenuOpen((open) => !open)}>
-            <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>{displayInitials}</Text>
-            </View>
-            <View style={styles.userInfo}>
-              <Text style={styles.userName}>{displayName}</Text>
-              <Text style={styles.userRole}>{displayRole}</Text>
-            </View>
-            <Animated.View style={[styles.chevronWrap, chevronAnimatedStyle]}>
-              <Text style={[styles.userChevron, menuOpen && styles.userChevronOpen]}>▾</Text>
-            </Animated.View>
-          </Pressable>
+          <View style={[styles.userMenuWrapper, collapsed && styles.userMenuWrapperCollapsed]}>
+            {menuOpen && (
+              <View style={[styles.userMenu, collapsed && styles.userMenuCollapsed]}>
+                {collapsed && (
+                  <Pressable
+                    style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      router.push('/pro' as Href);
+                    }}>
+                    <Text style={styles.userMenuItemText}>{sidebarLinkLabel}</Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
+                  onPress={handleLogout}>
+                  <Text style={styles.userMenuItemText}>Sair</Text>
+                </Pressable>
+              </View>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.userSection,
+                collapsed && styles.userSectionCollapsed,
+                pressed && styles.userSectionPressed,
+              ]}
+              onPress={() => setMenuOpen((open) => !open)}
+              accessibilityRole="button"
+              accessibilityLabel={collapsed ? `Menu de ${displayName}` : undefined}
+              accessibilityState={{ expanded: menuOpen }}>
+              <View style={styles.userAvatar}>
+                <Text style={styles.userAvatarText}>{displayInitials}</Text>
+              </View>
+              {!collapsed && (
+                <>
+                  <View style={styles.userInfo}>
+                    <Text style={styles.userName}>{displayName}</Text>
+                    <Text style={styles.userRole}>{displayRole}</Text>
+                  </View>
+                  <Animated.View style={[styles.chevronWrap, chevronAnimatedStyle]}>
+                    <Text style={[styles.userChevron, menuOpen && styles.userChevronOpen]}>▾</Text>
+                  </Animated.View>
+                </>
+              )}
+            </Pressable>
+          </View>
         </View>
       </View>
-    </View>
+
+      <SidebarToggle collapsed={collapsed} onToggle={onToggle} />
+    </Animated.View>
   );
 }
 
-const SIDEBAR_WIDTH = 280;
-
 const styles = StyleSheet.create({
-  sidebar: {
-    width: SIDEBAR_WIDTH,
-    backgroundColor: BrandColors.graphite,
-    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
+  sidebarShell: {
     flexShrink: 0,
+    position: 'relative',
+    overflow: 'visible',
+    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
+  },
+  sidebar: {
+    flex: 1,
+    backgroundColor: BrandColors.graphite,
     paddingVertical: 24,
     justifyContent: 'flex-start',
+    overflow: 'hidden',
+    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
+  },
+  edgeToggle: {
+    position: 'absolute',
+    right: -SIDEBAR_EDGE_TOGGLE.width / 2,
+    top: '50%',
+    width: SIDEBAR_EDGE_TOGGLE.width,
+    height: SIDEBAR_EDGE_TOGGLE.height,
+    marginTop: -SIDEBAR_EDGE_TOGGLE.height / 2,
+    borderRadius: 8,
+    backgroundColor: BrandColors.white,
+    borderWidth: 1,
+    borderColor: BrandColors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
+  },
+  edgeTogglePressed: {
+    opacity: 0.85,
+  },
+  edgeToggleArrow: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: BrandColors.textSecondary,
+    lineHeight: 20,
   },
   logoContainer: {
     paddingHorizontal: 20,
@@ -165,6 +304,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     gap: 2,
   },
+  navSectionCollapsed: {
+    paddingHorizontal: 8,
+  },
   navItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -174,6 +316,11 @@ const styles = StyleSheet.create({
     gap: 12,
     position: 'relative',
     minHeight: 42,
+  },
+  navItemCollapsed: {
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    gap: 0,
   },
   navItemActive: {
     backgroundColor: BrandColors.orangeLight,
@@ -189,6 +336,11 @@ const styles = StyleSheet.create({
     width: 3,
     backgroundColor: BrandColors.orange,
     borderRadius: 2,
+  },
+  activeIndicatorCollapsed: {
+    left: 4,
+    top: 6,
+    bottom: 6,
   },
   navIconWrap: {
     width: 20,
@@ -217,6 +369,11 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     paddingHorizontal: 16,
     gap: 16,
+  },
+  bottomSectionCollapsed: {
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    gap: 12,
   },
   planCard: {
     backgroundColor: BrandColors.graphiteLight,
@@ -255,8 +412,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: BrandColors.orange,
   },
+  proIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  proIconButtonActive: {
+    backgroundColor: BrandColors.orangeLight,
+  },
+  proIconButtonPressed: {
+    opacity: 0.8,
+  },
   userMenuWrapper: {
     gap: 8,
+  },
+  userMenuWrapperCollapsed: {
+    alignItems: 'center',
+    zIndex: 20,
   },
   userMenu: {
     backgroundColor: BrandColors.graphiteLight,
@@ -264,6 +438,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
     overflow: 'hidden',
+  },
+  userMenuCollapsed: {
+    position: 'absolute',
+    left: '100%',
+    bottom: 0,
+    marginLeft: 8,
+    minWidth: 180,
+    zIndex: 30,
+    ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
   },
   userMenuItem: {
     paddingVertical: 12,
@@ -284,6 +467,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
     borderRadius: 10,
+  },
+  userSectionCollapsed: {
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    gap: 0,
   },
   userSectionPressed: {
     backgroundColor: 'rgba(255, 255, 255, 0.04)',

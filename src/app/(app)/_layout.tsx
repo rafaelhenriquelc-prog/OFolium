@@ -1,4 +1,5 @@
 import { Redirect, Slot } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -16,10 +17,20 @@ import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 
 function AppShell() {
   const { isCompactLayout, insets } = useResponsiveLayout();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (isCompactLayout) {
+      setSidebarCollapsed(false);
+    }
+  }, [isCompactLayout]);
 
   return (
     <View style={styles.root}>
-      <Sidebar />
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((current) => !current)}
+      />
       <View style={styles.mainColumn}>
         <DemoBanner />
         <View

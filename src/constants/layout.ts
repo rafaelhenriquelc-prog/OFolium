@@ -6,6 +6,12 @@ export const MOBILE_BREAKPOINT = 768;
 /** Abaixo disso: sidebar oculta, nav inferior (mobile + tablet). */
 export const DESKTOP_BREAKPOINT = 1024;
 
+export const SIDEBAR_WIDTH_EXPANDED = 280;
+
+export const SIDEBAR_WIDTH_COLLAPSED = 72;
+
+export const SIDEBAR_EDGE_TOGGLE = { width: 28, height: 44 } as const;
+
 export const MOBILE_BOTTOM_NAV_HEIGHT = 52;
 
 export const MOBILE_HORIZONTAL_PADDING = 16;
