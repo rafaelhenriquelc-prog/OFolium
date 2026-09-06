@@ -32,6 +32,17 @@ export function formatCurrencyInput(value: string): string {
   return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/** Converte entrada monetária mascarada (ex.: "R$ 10,00") em número decimal. */
+export function parseCurrencyInput(value: string): number | null {
+  const digits = filterDigits(value);
+  if (!digits) return null;
+
+  const amount = Number.parseInt(digits, 10) / 100;
+  if (!Number.isFinite(amount) || amount < 0) return null;
+
+  return amount;
+}
+
 export type NumericMask = 'phone' | 'cnpj' | 'currency' | 'digits';
 
 export function applyNumericMask(value: string, mask: NumericMask): string {

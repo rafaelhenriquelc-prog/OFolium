@@ -21,7 +21,8 @@ import type { AbsenceSubtype, Movement, RecordType } from '@/data/types';
 import { ESTIMATE_DISCLAIMER, formatMinutesAsHours, sumMovementsByType } from '@/utils/calculations';
 import { competenceToLabel, CURRENT_COMPETENCE, getCompetenceFromDate } from '@/utils/competence';
 import { formatCurrency, formatDate } from '@/utils/format';
-import { formatHireDate } from '@/utils/dateInput';
+import { formatHireDate, getLocalTodayIso, parseDateInputToIso } from '@/utils/dateInput';
+import { parseCurrencyInput } from '@/utils/masks';
 
 type Tab = 'Resumo' | 'Registros' | 'Fechamentos';
 
@@ -316,11 +317,6 @@ function RegisterModal({
   );
 }
 
-function parseCurrencyAmount(value: string): number {
-  const digits = value.replace(/\D/g, '');
-  return digits ? Number.parseInt(digits, 10) / 100 : 0;
-}
-
 function RecordFormModal({
   visible,
   type,
@@ -340,6 +336,8 @@ function RecordFormModal({
   const [amount, setAmount] = useState('');
   const [absenceSubtype, setAbsenceSubtype] = useState<AbsenceSubtype>('Falta injustificada');
   const [notes, setNotes] = useState('');
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -348,6 +346,8 @@ function RecordFormModal({
     setAmount('');
     setAbsenceSubtype('Falta injustificada');
     setNotes('');
+    setFormError('');
+    setIsSaving(false);
   }, [visible, type]);
 
   if (!type) return null;
@@ -356,24 +356,41 @@ function RecordFormModal({
     onClose();
   };
 
-  const handleSave = () => {
-    const date = occurrenceDate || new Date().toISOString().slice(0, 10);
-    const parsedAmount = parseCurrencyAmount(amount);
+  const handleSave = async () => {
+    if (isSaving) return;
+
+    setFormError('');
+
+    if (occurrenceDate.trim() && !parseDateInputToIso(occurrenceDate)) {
+      setFormError('Informe uma data válida.');
+      return;
+    }
+
+    const dateIso = parseDateInputToIso(occurrenceDate) ?? getLocalTodayIso();
+    const parsedAmount = parseCurrencyInput(amount);
     let value = '';
     let movementAmount: number | undefined;
 
     switch (type) {
       case 'Hora extra':
-        value = duration.trim() || '0h';
-        movementAmount = parsedAmount || undefined;
+        if (!duration.trim()) {
+          setFormError('Informe a duração da hora extra.');
+          return;
+        }
+        value = duration.trim();
+        movementAmount = parsedAmount ?? undefined;
         break;
       case 'Falta':
         value = '1 dia';
-        movementAmount = parsedAmount || undefined;
+        movementAmount = parsedAmount ?? undefined;
         break;
       case 'Vale':
       case 'Adicional':
       case 'Desconto':
+        if (parsedAmount === null || parsedAmount <= 0) {
+          setFormError('Informe um valor válido.');
+          return;
+        }
         movementAmount = parsedAmount;
         value = formatCurrency(parsedAmount);
         break;
@@ -383,8 +400,8 @@ function RecordFormModal({
       employeeId,
       employeeName,
       type,
-      occurrenceDate: date,
-      competence: getCompetenceFromDate(date),
+      occurrenceDate: dateIso,
+      competence: getCompetenceFromDate(dateIso),
       value,
       amount: movementAmount,
       notes: notes.trim() || undefined,
@@ -401,8 +418,20 @@ function RecordFormModal({
       }
     }
 
-    addMovement(movement);
-    handleClose();
+    setIsSaving(true);
+
+    try {
+      const result = await addMovement(movement);
+
+      if (!result.success) {
+        setFormError(result.message);
+        return;
+      }
+
+      handleClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const showCurrencyField = type === 'Vale' || type === 'Adicional' || type === 'Desconto';
@@ -469,10 +498,17 @@ function RecordFormModal({
           onChangeText={setNotes}
         />
 
+        {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+
         <View style={styles.modalActions}>
-          <Button label="Cancelar" variant="outline" onPress={handleClose} />
+          <Button label="Cancelar" variant="outline" onPress={handleClose} disabled={isSaving} />
           <View style={styles.modalPrimary}>
-            <Button label="Salvar registro" fullWidth onPress={handleSave} />
+            <Button
+              label={isSaving ? 'Salvando...' : 'Salvar registro'}
+              fullWidth
+              disabled={isSaving}
+              onPress={handleSave}
+            />
           </View>
         </View>
       </View>
@@ -627,6 +663,12 @@ const styles = StyleSheet.create({
   },
   subtypeOptionText: { fontSize: 12, color: BrandColors.textSecondary, fontWeight: '500' },
   subtypeOptionTextActive: { color: BrandColors.orange, fontWeight: '600' },
+  formError: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: BrandColors.red,
+    marginTop: 4,
+  },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   modalPrimary: { flex: 1 },
 });

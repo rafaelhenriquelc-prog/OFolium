@@ -24,6 +24,9 @@ export function RecentActivity() {
     <View style={[styles.card, isMobile && styles.cardMobile]}>
       <Text style={styles.cardTitle}>Atividade recente</Text>
 
+      {activities.length === 0 ? (
+        <Text style={styles.emptyText}>Nenhuma movimentação registrada ainda.</Text>
+      ) : (
       <View style={styles.activityList}>
         {activities.map((activity, index) => {
           const display = formatActivityDisplay(activity.title, activity.detail);
@@ -60,6 +63,7 @@ export function RecentActivity() {
           );
         })}
       </View>
+      )}
     </View>
   );
 }
@@ -84,6 +88,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: BrandColors.textPrimary,
     marginBottom: 20,
+  },
+  emptyText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: BrandColors.textMuted,
+    paddingVertical: 8,
   },
   activityList: {
     gap: 0,

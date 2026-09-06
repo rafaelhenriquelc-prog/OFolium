@@ -1,5 +1,5 @@
 import { Image, type ImageSource } from 'expo-image';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 import { FadeSlideIn } from '@/components/animation/FadeSlideIn';
@@ -157,6 +157,7 @@ type StatCardsRowProps = {
 
 function wrapStatCard(
   card: React.ReactElement,
+  id: string,
   index: number,
   enterStyle: ViewStyle | undefined,
   entryAnimation?: StatCardsRowEntryAnimation,
@@ -169,7 +170,6 @@ function wrapStatCard(
 
   return (
     <FadeSlideIn
-      key={card.key ?? index}
       delay={baseDelay + index * stagger}
       duration={duration}
       translateY={translateY}
@@ -189,8 +189,9 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
     : undefined;
   const desktopEnterStyle = isMobile ? undefined : styles.statCardEnter;
 
-  const cardElements: { card: React.ReactElement; enterStyle?: ViewStyle }[] = [
+  const cardElements: { id: string; card: React.ReactElement; enterStyle?: ViewStyle }[] = [
     {
+      id: 'active-employees',
       enterStyle: mobileEnterStyle ?? desktopEnterStyle,
       card: (
         <StatCard
@@ -206,6 +207,7 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
       ),
     },
     {
+      id: 'month-forecast',
       enterStyle: mobileEnterStyle ?? desktopEnterStyle,
       card: (
         <StatCard
@@ -220,6 +222,7 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
       ),
     },
     {
+      id: 'overtime',
       enterStyle: mobileEnterStyle ?? desktopEnterStyle,
       card: (
         <StatCard
@@ -234,6 +237,7 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
       ),
     },
     {
+      id: 'pending',
       enterStyle: mobileEnterStyle ?? desktopEnterStyle,
       card: (
         <StatCard
@@ -251,9 +255,9 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
     },
   ];
 
-  const cards = cardElements.map(({ card, enterStyle }, index) =>
-    wrapStatCard(card, index, enterStyle, entryAnimation),
-  );
+  const cards = cardElements.map(({ id, card, enterStyle }, index) => (
+    <Fragment key={id}>{wrapStatCard(card, id, index, enterStyle, entryAnimation)}</Fragment>
+  ));
 
   if (isMobile) {
     return (

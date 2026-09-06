@@ -1,10 +1,22 @@
 import { useRouter, type Href } from 'expo-router';
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { BrandColors } from '@/constants/colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { useEmployees } from '@/contexts/EmployeesContext';
+import { usePlan } from '@/contexts/PlanContext';
 import {
   INITIAL_ACTIVITIES,
   INITIAL_COMPETENCE_STATE,
@@ -23,6 +35,13 @@ import type {
   NotificationItem,
 } from '@/data/types';
 import {
+  createMovement,
+  deleteMovementRecord,
+  listMovementsByBusiness,
+  updateMovementRecord,
+} from '@/services/movements';
+import { buildActivitiesFromMovements } from '@/utils/activityFromMovements';
+import {
   computeActiveClosingSummaries,
   computeEmployeeClosingSummary,
   countOvertimeEmployees,
@@ -30,8 +49,6 @@ import {
   sumMovementsByType,
 } from '@/utils/calculations';
 import { competenceToLabel, CURRENT_COMPETENCE, getCompetenceFromDate } from '@/utils/competence';
-import { useEmployees } from '@/contexts/EmployeesContext';
-import { usePlan } from '@/contexts/PlanContext';
 
 type ProFeatureKey =
   | 'close_competence'
@@ -59,11 +76,17 @@ const PRO_FEATURE_MESSAGES: Record<ProFeatureKey, string> = {
     'A comparação entre meses está disponível no OFolium Pro.',
 };
 
+export type AddMovementResult =
+  | { success: true; movement: Movement }
+  | { success: false; message: string };
+
 type AppDataContextValue = {
   currentCompetence: string;
   competenceLabel: string;
   competenceStatus: CompetenceState['status'];
   movements: Movement[];
+  isMovementsLoading: boolean;
+  movementsError: string | null;
   notifications: NotificationItem[];
   unreadNotificationCount: number;
   activities: ActivityItem[];
@@ -85,9 +108,10 @@ type AppDataContextValue = {
   markEmployeeReviewed: (employeeId: string) => void;
   closeCompetence: () => boolean;
   reopenCompetence: (reason: string) => boolean;
-  addMovement: (movement: Omit<Movement, 'id' | 'createdAt'>) => Movement;
-  updateMovement: (id: string, patch: Partial<Movement>) => void;
-  removeMovement: (id: string) => void;
+  addMovement: (movement: Omit<Movement, 'id' | 'createdAt'>) => Promise<AddMovementResult>;
+  updateMovement: (id: string, patch: Partial<Movement>) => Promise<{ success: boolean; message?: string }>;
+  removeMovement: (id: string) => Promise<{ success: boolean; message?: string }>;
+  reloadMovements: () => Promise<void>;
   markNotificationRead: (id: string) => void;
   openProFeature: (feature: ProFeatureKey) => void;
   ProFeatureModalHost: () => ReactNode;
@@ -130,17 +154,118 @@ function buildSnapshot(
   };
 }
 
+function cloneDemoMovements(): Movement[] {
+  return INITIAL_MOVEMENTS.map((movement) => ({ ...movement }));
+}
+
+function createEmptyCompetenceState(): CompetenceState {
+  return {
+    competence: CURRENT_COMPETENCE,
+    status: 'Em revisão',
+    reviewStatuses: {},
+    snapshot: null,
+    archivedSnapshots: [],
+  };
+}
+
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const { employees } = useEmployees();
+  const { employees, isDemoMode } = useEmployees();
+  const { business, isBusinessLoading, businessError } = useAuth();
   const { isPro } = usePlan();
   const router = useRouter();
-  const [movements, setMovements] = useState<Movement[]>(() => [...INITIAL_MOVEMENTS]);
-  const [competenceState, setCompetenceState] = useState<CompetenceState>(() => ({
-    ...INITIAL_COMPETENCE_STATE,
-  }));
-  const [activities, setActivities] = useState<ActivityItem[]>(() => [...INITIAL_ACTIVITIES]);
+
+  const [movements, setMovements] = useState<Movement[]>([]);
+  const [isMovementsLoading, setIsMovementsLoading] = useState(!isDemoMode);
+  const [movementsError, setMovementsError] = useState<string | null>(null);
+  const [isMovementSubmitting, setIsMovementSubmitting] = useState(false);
+
+  const [competenceState, setCompetenceState] = useState<CompetenceState>(() =>
+    isDemoMode ? { ...INITIAL_COMPETENCE_STATE, reviewStatuses: { ...INITIAL_COMPETENCE_STATE.reviewStatuses } } : createEmptyCompetenceState(),
+  );
+  const [demoActivities, setDemoActivities] = useState<ActivityItem[]>(() => [...INITIAL_ACTIVITIES]);
   const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
   const [proFeature, setProFeature] = useState<ProFeatureKey | null>(null);
+
+  const loadRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (isDemoMode) {
+      setCompetenceState({
+        ...INITIAL_COMPETENCE_STATE,
+        reviewStatuses: { ...INITIAL_COMPETENCE_STATE.reviewStatuses },
+      });
+      return;
+    }
+    setCompetenceState(createEmptyCompetenceState());
+  }, [isDemoMode]);
+
+  const reloadMovements = useCallback(async () => {
+    if (isDemoMode) {
+      setMovements(cloneDemoMovements());
+      setIsMovementsLoading(false);
+      setMovementsError(null);
+      return;
+    }
+
+    if (!business?.id) {
+      setMovements([]);
+      setIsMovementsLoading(isBusinessLoading);
+      setMovementsError(businessError);
+      return;
+    }
+
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+
+    setIsMovementsLoading(true);
+    setMovementsError(null);
+
+    const { data, error } = await listMovementsByBusiness(business.id);
+
+    if (loadRequestIdRef.current !== requestId) return;
+
+    if (error) {
+      setMovements([]);
+      setMovementsError(error.message);
+      setIsMovementsLoading(false);
+      return;
+    }
+
+    setMovements(data);
+    setIsMovementsLoading(false);
+    setMovementsError(null);
+  }, [business?.id, businessError, isBusinessLoading, isDemoMode]);
+
+  useEffect(() => {
+    if (isDemoMode) {
+      setMovements(cloneDemoMovements());
+      setIsMovementsLoading(false);
+      setMovementsError(null);
+      return;
+    }
+
+    if (isBusinessLoading) {
+      setIsMovementsLoading(true);
+      setMovementsError(null);
+      return;
+    }
+
+    if (businessError) {
+      setMovements([]);
+      setIsMovementsLoading(false);
+      setMovementsError(businessError);
+      return;
+    }
+
+    if (!business?.id) {
+      setMovements([]);
+      setIsMovementsLoading(false);
+      setMovementsError(null);
+      return;
+    }
+
+    void reloadMovements();
+  }, [business?.id, businessError, isBusinessLoading, isDemoMode, reloadMovements]);
 
   const notifications = useMemo(() => {
     const base = INITIAL_NOTIFICATIONS_BASE.map((item) => ({
@@ -163,6 +288,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
     return movements;
   }, [competenceState, movements]);
+
+  const activities = useMemo(() => {
+    if (isDemoMode) return demoActivities;
+    return buildActivitiesFromMovements(currentMovements);
+  }, [currentMovements, demoActivities, isDemoMode]);
 
   const closingSummaries = useMemo(() => {
     if (competenceState.snapshot?.competence === CURRENT_COMPETENCE) {
@@ -272,7 +402,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const getWeekMovements = useCallback(
     (startDay: number, endDay: number, competence = CURRENT_COMPETENCE) => {
-      const [year, month] = competence.split('-');
       return currentMovements
         .filter((movement) => {
           if (movement.competence !== competence) return false;
@@ -330,37 +459,149 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [competenceState.snapshot],
   );
 
-  const addMovement = useCallback((input: Omit<Movement, 'id' | 'createdAt'>) => {
-    const movement: Movement = {
-      ...input,
-      id: `m-${Date.now()}`,
-      competence: input.competence || getCompetenceFromDate(input.occurrenceDate),
-      createdAt: new Date().toISOString(),
-    };
-    setMovements((current) => [...current, movement]);
-    setActivities((current) => [
-      {
-        id: `a-${Date.now()}`,
-        title: `${movement.type} registrado para ${movement.employeeName.split(' ')[0]}`,
-        detail: movement.value,
-        time: 'Agora',
-        icon: movement.type === 'Hora extra' ? '◷' : '◈',
-        iconBg: BrandColors.orangeLight,
-        iconColor: BrandColors.orange,
-        createdAt: movement.createdAt,
-      },
-      ...current,
-    ].slice(0, 8));
-    return movement;
-  }, []);
+  const addMovement = useCallback(
+    async (input: Omit<Movement, 'id' | 'createdAt'>): Promise<AddMovementResult> => {
+      if (isMovementSubmitting) {
+        return { success: false, message: 'Aguarde o salvamento anterior terminar.' };
+      }
 
-  const updateMovement = useCallback((id: string, patch: Partial<Movement>) => {
-    setMovements((current) => current.map((movement) => (movement.id === id ? { ...movement, ...patch } : movement)));
-  }, []);
+      const employee = employees.find((item) => item.id === input.employeeId);
+      if (!employee) {
+        return { success: false, message: 'Funcionário não encontrado.' };
+      }
 
-  const removeMovement = useCallback((id: string) => {
-    setMovements((current) => current.filter((movement) => movement.id !== id));
-  }, []);
+      const payload = {
+        ...input,
+        employeeName: input.employeeName || employee.name,
+        competence: input.competence || getCompetenceFromDate(input.occurrenceDate),
+      };
+
+      if (isDemoMode) {
+        const movement: Movement = {
+          ...payload,
+          id: `m-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+        };
+        setMovements((current) => [...current, movement]);
+        setDemoActivities((current) =>
+          [
+            {
+              id: `a-${Date.now()}`,
+              title: `${movement.type} registrado para ${movement.employeeName.split(' ')[0]}`,
+              detail: movement.value,
+              time: 'Agora',
+              icon: movement.type === 'Hora extra' ? '◷' : '◈',
+              iconBg: BrandColors.orangeLight,
+              iconColor: BrandColors.orange,
+              createdAt: movement.createdAt,
+            },
+            ...current,
+          ].slice(0, 8),
+        );
+        return { success: true, movement };
+      }
+
+      if (!business?.id) {
+        return { success: false, message: 'Empresa não carregada. Tente novamente.' };
+      }
+
+      setIsMovementSubmitting(true);
+
+      try {
+        const { data, error } = await createMovement({
+          businessId: business.id,
+          employeeId: payload.employeeId,
+          employeeName: payload.employeeName,
+          type: payload.type,
+          occurrenceDate: payload.occurrenceDate,
+          competence: payload.competence,
+          value: payload.value,
+          amount: payload.amount,
+          notes: payload.notes,
+          absenceSubtype: payload.absenceSubtype,
+          estimatedDiscount: payload.estimatedDiscount,
+          formula: payload.formula,
+        });
+
+        if (error || !data) {
+          if (__DEV__ && error) {
+            console.warn('[AppDataContext] createMovement failed', {
+              code: error.code ?? 'unknown',
+              message: error.message,
+            });
+          }
+          return {
+            success: false,
+            message: error?.message ?? 'Não foi possível salvar a movimentação.',
+          };
+        }
+
+        setMovements((current) => [data, ...current]);
+        return { success: true, movement: data };
+      } finally {
+        setIsMovementSubmitting(false);
+      }
+    },
+    [business?.id, employees, isDemoMode, isMovementSubmitting],
+  );
+
+  const updateMovement = useCallback(
+    async (id: string, patch: Partial<Movement>): Promise<{ success: boolean; message?: string }> => {
+      if (isDemoMode) {
+        setMovements((current) =>
+          current.map((movement) => (movement.id === id ? { ...movement, ...patch } : movement)),
+        );
+        return { success: true };
+      }
+
+      if (!business?.id) {
+        return { success: false, message: 'Empresa não carregada.' };
+      }
+
+      const { data, error } = await updateMovementRecord(id, business.id, {
+        type: patch.type,
+        occurrenceDate: patch.occurrenceDate,
+        competence: patch.competence,
+        value: patch.value,
+        amount: patch.amount,
+        notes: patch.notes,
+        absenceSubtype: patch.absenceSubtype,
+        estimatedDiscount: patch.estimatedDiscount,
+        formula: patch.formula,
+      });
+
+      if (error || !data) {
+        return { success: false, message: error?.message ?? 'Não foi possível atualizar.' };
+      }
+
+      setMovements((current) => current.map((movement) => (movement.id === id ? data : movement)));
+      return { success: true };
+    },
+    [business?.id, isDemoMode],
+  );
+
+  const removeMovement = useCallback(
+    async (id: string): Promise<{ success: boolean; message?: string }> => {
+      if (isDemoMode) {
+        setMovements((current) => current.filter((movement) => movement.id !== id));
+        return { success: true };
+      }
+
+      if (!business?.id) {
+        return { success: false, message: 'Empresa não carregada.' };
+      }
+
+      const { error } = await deleteMovementRecord(id, business.id);
+
+      if (error) {
+        return { success: false, message: error.message };
+      }
+
+      setMovements((current) => current.filter((movement) => movement.id !== id));
+      return { success: true };
+    },
+    [business?.id, isDemoMode],
+  );
 
   const markNotificationRead = useCallback((id: string) => {
     setReadNotificationIds((current) => new Set(current).add(id));
@@ -404,6 +645,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       competenceLabel,
       competenceStatus: competenceState.status,
       movements: currentMovements,
+      isMovementsLoading,
+      movementsError,
       notifications,
       unreadNotificationCount,
       activities,
@@ -428,6 +671,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       addMovement,
       updateMovement,
       removeMovement,
+      reloadMovements,
       markNotificationRead,
       openProFeature,
       ProFeatureModalHost,
@@ -447,6 +691,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       getMovementsForDate,
       getMovementsForEmployee,
       getWeekMovements,
+      isMovementsLoading,
+      movementsError,
       markEmployeeReviewed,
       markNotificationRead,
       notifications,
@@ -456,6 +702,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       addMovement,
       updateMovement,
       removeMovement,
+      reloadMovements,
       totalForecast,
       unreadNotificationCount,
       overtimeEmployeeCount,
