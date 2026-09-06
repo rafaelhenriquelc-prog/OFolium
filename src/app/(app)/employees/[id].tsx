@@ -1,11 +1,11 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/mobile/Screen';
 
 import { Badge, getStatusVariant } from '@/components/ui/Badge';
+import { AppIcon } from '@/components/ui/AppIcon';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DateInput } from '@/components/ui/DateInput';
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { MaskedInput } from '@/components/ui/MaskedInput';
 import { Modal } from '@/components/ui/Modal';
 import { BrandColors } from '@/constants/colors';
-import { STAT_ICONS } from '@/constants/statIcons';
+import { ICON_SIZES, STAT_SYMBOLS, type StatIconType } from '@/constants/icons';
 import { useAppData } from '@/contexts/AppDataContext';
 import { useEmployees } from '@/contexts/EmployeesContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
@@ -43,13 +43,16 @@ const recordTypeColors: Record<RecordType, string> = {
   Desconto: BrandColors.red,
 };
 
-const SUMMARY_ICONS = {
-  'Horas extras': STAT_ICONS.horasExtras,
-  Faltas: STAT_ICONS.faltas,
-  Vales: STAT_ICONS.vales,
-  Adicionais: STAT_ICONS.adicionais,
-  'Previsão do mês': STAT_ICONS.previsaoDoMes,
-} as const;
+const SUMMARY_ICON_TYPES: Record<string, StatIconType> = {
+  'Horas extras': 'overtime',
+  Faltas: 'absences',
+  Vales: 'vales',
+  Adicionais: 'additions',
+  'Previsão do mês': 'monthForecast',
+};
+
+const SUMMARY_ICON_BG = BrandColors.offWhite;
+const SUMMARY_ICON_COLOR = BrandColors.graphite;
 
 export default function EmployeeProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -149,32 +152,27 @@ function SummaryTab({ employeeId, compact }: { employeeId: string; compact?: boo
     {
       label: 'Horas extras',
       value: formatMinutesAsHours(totals.overtimeMinutes),
-      bg: BrandColors.amberLight,
-      icon: SUMMARY_ICONS['Horas extras'],
+      iconType: SUMMARY_ICON_TYPES['Horas extras'],
     },
     {
       label: 'Faltas',
       value: String(totals.absenceCount),
-      bg: BrandColors.redLight,
-      icon: SUMMARY_ICONS.Faltas,
+      iconType: SUMMARY_ICON_TYPES.Faltas,
     },
     {
       label: 'Vales',
       value: formatCurrency(summary?.vales ?? 0),
-      bg: BrandColors.blueLight,
-      icon: SUMMARY_ICONS.Vales,
+      iconType: SUMMARY_ICON_TYPES.Vales,
     },
     {
       label: 'Adicionais',
       value: formatCurrency(summary?.additions ?? 0),
-      bg: BrandColors.greenLight,
-      icon: SUMMARY_ICONS.Adicionais,
+      iconType: SUMMARY_ICON_TYPES.Adicionais,
     },
     {
       label: 'Previsão do mês',
       value: formatCurrency(summary?.forecast ?? 0),
-      bg: BrandColors.orangeLight,
-      icon: SUMMARY_ICONS['Previsão do mês'],
+      iconType: SUMMARY_ICON_TYPES['Previsão do mês'],
     },
   ];
 
@@ -182,8 +180,12 @@ function SummaryTab({ employeeId, compact }: { employeeId: string; compact?: boo
     <View style={[styles.summaryGrid, compact && styles.summaryGridCompact]}>
       {cards.map((card) => (
         <Card key={card.label} style={[styles.summaryCard, compact && styles.summaryCardCompact]}>
-          <View style={[styles.summaryIcon, { backgroundColor: card.bg }]}>
-            <Image source={card.icon} style={styles.summaryIconImage} contentFit="contain" />
+          <View style={[styles.summaryIcon, { backgroundColor: SUMMARY_ICON_BG }]}>
+            <AppIcon
+              name={STAT_SYMBOLS[card.iconType]}
+              size={compact ? ICON_SIZES.statCardCompact : ICON_SIZES.statCard}
+              color={SUMMARY_ICON_COLOR}
+            />
           </View>
           <Text style={styles.summaryLabel}>{card.label}</Text>
           <Text style={styles.summaryValue}>{card.value}</Text>
@@ -560,10 +562,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  summaryIconImage: {
-    width: 20,
-    height: 20,
   },
   summaryLabel: { fontSize: 13, color: BrandColors.textSecondary },
   summaryValue: { fontSize: 22, fontWeight: '700', color: BrandColors.textPrimary },

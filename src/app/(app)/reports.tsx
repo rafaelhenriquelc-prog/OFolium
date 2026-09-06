@@ -10,8 +10,8 @@ import { HorizontalTableScroll } from '@/components/ui/HorizontalTableScroll';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { BrandColors } from '@/constants/colors';
-import { STAT_ICONS } from '@/constants/statIcons';
 import { MOBILE_STAT_CARD_WIDTH, MobileSpace } from '@/constants/layout';
+import { REPORTS_STAT_ICONS } from '@/constants/statIcons';
 import { ProLockedButton, useAppData } from '@/contexts/AppDataContext';
 import { useEmployees } from '@/contexts/EmployeesContext';
 import { usePlan } from '@/contexts/PlanContext';
@@ -74,38 +74,42 @@ export default function ReportsScreen() {
   const totalCardLabel =
     filters.recordType === 'all' ? 'Total previsto' : `Total (${reportData.recordTypeLabel.toLowerCase()})`;
 
+  const reportIconProps = {
+    iconIncludesBackground: true as const,
+  };
+
   const stats = (
     <>
       <StatCard
         label={totalCardLabel}
         value={formatCurrency(reportData.totalForecast)}
         detail={filters.recordType === 'all' ? 'Valor gerencial previsto' : 'Soma dos registros filtrados'}
-        iconImage={STAT_ICONS.previsaoDoMes}
-        iconBg={BrandColors.blueLight}
+        iconImage={REPORTS_STAT_ICONS.totalForecast}
+        {...reportIconProps}
         compact={isCompactLayout}
         fixedWidth={isCompactLayout ? MOBILE_STAT_CARD_WIDTH : undefined}
       />
       <StatCard
         label="Horas extras"
         value={reportData.overtimeHours}
-        iconImage={STAT_ICONS.horasExtras}
-        iconBg={BrandColors.amberLight}
+        iconImage={REPORTS_STAT_ICONS.overtime}
+        {...reportIconProps}
         compact={isCompactLayout}
         fixedWidth={isCompactLayout ? MOBILE_STAT_CARD_WIDTH : undefined}
       />
       <StatCard
         label="Vales"
         value={formatCurrency(reportData.valesTotal)}
-        iconImage={STAT_ICONS.vales}
-        iconBg={BrandColors.blueLight}
+        iconImage={REPORTS_STAT_ICONS.vales}
+        {...reportIconProps}
         compact={isCompactLayout}
         fixedWidth={isCompactLayout ? MOBILE_STAT_CARD_WIDTH : undefined}
       />
       <StatCard
         label="Faltas"
         value={String(reportData.absenceCount)}
-        iconImage={STAT_ICONS.faltas}
-        iconBg={BrandColors.redLight}
+        iconImage={REPORTS_STAT_ICONS.absences}
+        {...reportIconProps}
         compact={isCompactLayout}
         fixedWidth={isCompactLayout ? MOBILE_STAT_CARD_WIDTH : undefined}
       />

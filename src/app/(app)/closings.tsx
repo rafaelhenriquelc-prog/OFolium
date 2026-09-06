@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { BrandColors } from '@/constants/colors';
-import { STAT_ICONS } from '@/constants/statIcons';
+import { CLOSINGS_STAT_ICONS } from '@/constants/statIcons';
 import { ProLockedButton, useAppData } from '@/contexts/AppDataContext';
 import type { EmployeeClosingSummary } from '@/data/types';
 import { usePlan } from '@/contexts/PlanContext';
@@ -109,20 +109,19 @@ export default function ClosingsScreen() {
           label="Total previsto"
           value={formatCurrency(totalForecast)}
           detail="Valor gerencial previsto"
-          iconImage={STAT_ICONS.previsaoDoMes}
-          iconBg={BrandColors.blueLight}
+          iconImage={CLOSINGS_STAT_ICONS.totalForecast}
+          iconIncludesBackground
         />
         <StatCard
           label="Funcionários revisados"
           value={String(reviewed)}
-          icon="✓"
-          iconBg={BrandColors.greenLight}
-          iconColor={BrandColors.green}
+          iconImage={CLOSINGS_STAT_ICONS.employeesReviewed}
+          iconIncludesBackground
         />
         <StatCard
           label="Pendentes"
           value={String(pending)}
-          icon="◉"
+          iconDot
           iconBg={BrandColors.amberLight}
           iconColor={BrandColors.amber}
         />
@@ -163,7 +162,10 @@ export default function ClosingsScreen() {
                 {formatCurrency(closing.forecast)}
               </Text>
               <View style={styles.colStatus}>
-                <Badge label={closing.reviewStatus} variant={getStatusVariant(closing.reviewStatus)} />
+                <Badge
+                  label={closing.reviewStatus}
+                  variant={closing.reviewStatus === 'Revisado' ? 'success' : 'warning'}
+                />
               </View>
             </Pressable>
           ))}
@@ -280,7 +282,10 @@ function ClosingDetailModal({
         <BreakdownLine label="= Valor previsto" value={formatCurrency(closing.forecast)} total />
       </View>
       <Text style={styles.estimateNotice}>{ESTIMATE_DISCLAIMER}</Text>
-      <Badge label={closing.reviewStatus} variant={getStatusVariant(closing.reviewStatus)} />
+      <Badge
+        label={closing.reviewStatus}
+        variant={closing.reviewStatus === 'Revisado' ? 'success' : 'warning'}
+      />
       {closing.reviewStatus !== 'Revisado' && (
         <View style={styles.reviewAction}>
           {isPro ? (

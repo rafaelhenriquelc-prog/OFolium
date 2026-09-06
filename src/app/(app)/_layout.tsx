@@ -18,7 +18,7 @@ import { PlanProvider } from '@/contexts/PlanContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 
 function AppShell() {
-  const { isCompactLayout, insets } = useResponsiveLayout();
+  const { isCompactLayout } = useResponsiveLayout();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
@@ -41,7 +41,6 @@ function AppShell() {
               style={[
                 styles.content,
                 isCompactLayout && mobilePageContain,
-                isCompactLayout && { paddingTop: insets.top },
               ]}>
               <Slot />
             </View>
@@ -65,7 +64,7 @@ export default function AppLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={styles.root}>
+    <GestureHandlerRootView style={styles.gestureRoot}>
       <PlanProvider>
         <EmployeesProvider>
           <AppDataProvider>
@@ -78,19 +77,28 @@ export default function AppLayout() {
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   root: {
     flex: 1,
     flexDirection: 'row',
+    minHeight: 0,
+    minWidth: 0,
     backgroundColor: BrandColors.background,
     ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
   },
   mainColumn: {
     flex: 1,
     minWidth: 0,
+    minHeight: 0,
+    flexDirection: 'column',
   },
   content: {
     flex: 1,
     minWidth: 0,
+    minHeight: 0,
+    position: 'relative',
     backgroundColor: 'transparent',
   },
 });

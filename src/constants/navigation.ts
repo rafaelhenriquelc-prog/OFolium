@@ -1,4 +1,4 @@
-export type NavIconType = 'grid' | 'people' | 'calendar' | 'cash' | 'chart' | 'bell' | 'settings' | 'more';
+export type NavIconType = 'grid' | 'people' | 'calendar' | 'cash' | 'chart' | 'bell' | 'settings' | 'more' | 'pro';
 
 export type NavItem = {
   label: string;

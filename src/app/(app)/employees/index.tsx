@@ -1,6 +1,7 @@
 import { useRouter, type Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Platform,
   Pressable,
   StyleSheet,
@@ -34,7 +35,15 @@ type Filter = 'Todos' | 'Ativos' | 'Inativos';
 
 export default function EmployeesScreen() {
   const router = useRouter();
-  const { employees, activeCount, addEmployee, isSubmitting } = useEmployees();
+  const {
+    employees,
+    activeCount,
+    addEmployee,
+    isSubmitting,
+    isLoading,
+    error,
+    reloadEmployees,
+  } = useEmployees();
   const { activeLimit } = usePlan();
   const { isCompactLayout } = useResponsiveLayout();
   const [search, setSearch] = useState('');
@@ -68,16 +77,50 @@ export default function EmployeesScreen() {
     router.push('/pro' as Href);
   };
 
+  const isAccountEmpty = !isLoading && !error && employees.length === 0;
+  const isFilterEmpty = !isLoading && !error && employees.length > 0 && filtered.length === 0;
+
   return (
     <Screen>
       <PageHeader
         title="Funcionários"
         subtitle="Gerencie sua equipe em um só lugar."
         action={
-          <Button label="+ Adicionar funcionário" onPress={handleAddPress} />
+          !isLoading && !error ? (
+            <Button label="+ Adicionar funcionário" onPress={handleAddPress} />
+          ) : undefined
         }
       />
 
+      {isLoading && (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="small" color={BrandColors.orange} />
+          <Text style={styles.stateText}>Carregando funcionários…</Text>
+        </View>
+      )}
+
+      {!isLoading && error && (
+        <View style={styles.centerState}>
+          <Text style={styles.errorTitle}>Não foi possível carregar</Text>
+          <Text style={styles.stateText}>{error}</Text>
+          <View style={styles.stateAction}>
+            <Button label="Tentar novamente" onPress={() => void reloadEmployees()} />
+          </View>
+        </View>
+      )}
+
+      {!isLoading && !error && isAccountEmpty && (
+        <View style={styles.emptyAccount}>
+          <Text style={styles.emptyAccountTitle}>Nenhum funcionário cadastrado</Text>
+          <Text style={styles.emptyAccountText}>
+            Cadastre o primeiro funcionário para começar a organizar sua equipe.
+          </Text>
+          <Button label="Adicionar funcionário" onPress={handleAddPress} />
+        </View>
+      )}
+
+      {!isLoading && !error && !isAccountEmpty && (
+        <>
       <View style={styles.toolbar}>
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>⌕</Text>
@@ -120,11 +163,13 @@ export default function EmployeesScreen() {
             />
           ))}
 
-          {filtered.length === 0 && (
+          {isFilterEmpty && (
             <Text style={styles.emptyText}>Nenhum funcionário encontrado.</Text>
           )}
         </HorizontalTableScroll>
       </Card>
+        </>
+      )}
 
       <AddEmployeeModal
         visible={showAddModal}
@@ -218,7 +263,7 @@ function AddEmployeeModal({
     onClose();
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setFormError('');
     setHireDateError('');
 
@@ -245,7 +290,7 @@ function AddEmployeeModal({
     const salaryDigits = baseSalary.replace(/\D/g, '');
     const parsedSalary = salaryDigits ? Number.parseInt(salaryDigits, 10) / 100 : 0;
 
-    const result = addEmployee({
+    const result = await addEmployee({
       name: trimmedName,
       role: trimmedRole,
       status,
@@ -265,6 +310,16 @@ function AddEmployeeModal({
 
       if (result.reason === 'busy') {
         setFormError('Aguarde o salvamento anterior terminar.');
+        return;
+      }
+
+      if (result.reason === 'unavailable') {
+        setFormError(result.message ?? 'Empresa não disponível. Tente novamente.');
+        return;
+      }
+
+      if (result.reason === 'error') {
+        setFormError(result.message ?? 'Não foi possível salvar o funcionário. Tente novamente.');
         return;
       }
 
@@ -450,6 +505,47 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: BrandColors.textMuted,
     fontSize: 14,
+  },
+  centerState: {
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  stateText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: BrandColors.textSecondary,
+    textAlign: 'center',
+  },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: BrandColors.textPrimary,
+    textAlign: 'center',
+  },
+  stateAction: {
+    marginTop: 8,
+  },
+  emptyAccount: {
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 64,
+    paddingHorizontal: 24,
+  },
+  emptyAccountTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: BrandColors.textPrimary,
+    textAlign: 'center',
+  },
+  emptyAccountText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: BrandColors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 8,
+    maxWidth: 360,
   },
   form: { gap: 14 },
   statusField: { gap: 8 },

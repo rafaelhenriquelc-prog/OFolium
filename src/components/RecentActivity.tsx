@@ -1,38 +1,64 @@
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
+import { AppIcon } from '@/components/ui/AppIcon';
 import { BrandColors, Shadows } from '@/constants/colors';
+import {
+  formatActivityDisplay,
+  getActivityIconType,
+  ICON_SIZES,
+  STAT_SYMBOLS,
+} from '@/constants/icons';
 import { useAppData } from '@/contexts/AppDataContext';
 import { mobileStackedCard } from '@/constants/layout';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 
+const ACTIVITY_ICON_BG = BrandColors.offWhite;
+const ACTIVITY_ICON_COLOR = BrandColors.graphite;
+
 export function RecentActivity() {
   const { activities } = useAppData();
-  const { isMobile } = useResponsiveLayout();
+  const { isMobile, width } = useResponsiveLayout();
+  const stackTime = isMobile || width < 480;
 
   return (
     <View style={[styles.card, isMobile && styles.cardMobile]}>
       <Text style={styles.cardTitle}>Atividade recente</Text>
 
       <View style={styles.activityList}>
-        {activities.map((activity, index) => (
-          <View
-            key={activity.id}
-            style={[
-              styles.activityItem,
-              isMobile && styles.activityItemMobile,
-              index < activities.length - 1 && styles.activityBorder,
-            ]}>
-            <View style={[styles.iconCircle, { backgroundColor: activity.iconBg }]}>
-              <Text style={[styles.icon, { color: activity.iconColor }]}>{activity.icon}</Text>
+        {activities.map((activity, index) => {
+          const display = formatActivityDisplay(activity.title, activity.detail);
+          const iconType = getActivityIconType(activity.title);
+
+          return (
+            <View
+              key={activity.id}
+              style={[
+                styles.activityItem,
+                index < activities.length - 1 && styles.activityBorder,
+              ]}>
+              <View style={styles.iconCircle}>
+                <AppIcon
+                  name={STAT_SYMBOLS[iconType]}
+                  size={ICON_SIZES.activity}
+                  color={ACTIVITY_ICON_COLOR}
+                />
+              </View>
+
+              <View style={styles.activityMain}>
+                <View style={[styles.activityTopRow, stackTime && styles.activityTopRowStacked]}>
+                  <View style={styles.activityContent}>
+                    <Text style={styles.activityTitle}>{display.title}</Text>
+                    {display.subtitle && (
+                      <Text style={styles.activityDetail}>{display.subtitle}</Text>
+                    )}
+                  </View>
+                  {!stackTime && <Text style={styles.activityTime}>{activity.time}</Text>}
+                </View>
+                {stackTime && <Text style={styles.activityTimeStacked}>{activity.time}</Text>}
+              </View>
             </View>
-            <View style={styles.activityContent}>
-              <Text style={styles.activityTitle}>{activity.title}</Text>
-              {activity.detail && <Text style={styles.activityDetail}>{activity.detail}</Text>}
-              {isMobile && <Text style={styles.activityTimeMobile}>{activity.time}</Text>}
-            </View>
-            {!isMobile && <Text style={styles.activityTime}>{activity.time}</Text>}
-          </View>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
@@ -64,21 +90,13 @@ const styles = StyleSheet.create({
   },
   activityItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 14,
     paddingVertical: 14,
   },
   activityBorder: {
     borderBottomWidth: 1,
     borderBottomColor: BrandColors.borderLight,
-  },
-  activityItemMobile: {
-    alignItems: 'flex-start',
-  },
-  activityTimeMobile: {
-    fontSize: 12,
-    color: BrandColors.textMuted,
-    marginTop: 4,
   },
   iconCircle: {
     width: 36,
@@ -87,13 +105,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    backgroundColor: ACTIVITY_ICON_BG,
   },
-  icon: {
-    fontSize: 14,
-    fontWeight: '600',
+  activityMain: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  activityTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  activityTopRowStacked: {
+    flexDirection: 'column',
+    gap: 2,
   },
   activityContent: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   activityTitle: {
@@ -103,12 +133,18 @@ const styles = StyleSheet.create({
   },
   activityDetail: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '400',
     color: BrandColors.textSecondary,
   },
   activityTime: {
     fontSize: 12,
     color: BrandColors.textMuted,
     flexShrink: 0,
+    paddingTop: 1,
+  },
+  activityTimeStacked: {
+    fontSize: 12,
+    color: BrandColors.textMuted,
+    alignSelf: 'flex-end',
   },
 });

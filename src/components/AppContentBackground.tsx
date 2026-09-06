@@ -26,6 +26,7 @@ const styles = StyleSheet.create({
   shell: {
     flex: 1,
     minWidth: 0,
+    minHeight: 0,
     backgroundColor: BrandColors.background,
     overflow: 'hidden',
     position: 'relative',

@@ -74,7 +74,7 @@ export function Header({ onNotificationPress, isNotificationsPanelOpen }: Header
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <Text style={styles.pageTitle}>Painel</Text>
-        <Text style={styles.greeting}>Bom dia, {firstName}! 👋</Text>
+        <Text style={styles.greeting}>Bom dia, {firstName}!</Text>
         <Text style={styles.subtitle}>Aqui está o resumo da sua equipe hoje.</Text>
       </View>
 

@@ -16,6 +16,7 @@ import type {
   ActivityItem,
   ClosingSnapshot,
   CompetenceState,
+  DashboardPendingItem,
   DashboardStats,
   EmployeeClosingSummary,
   Movement,
@@ -67,6 +68,8 @@ type AppDataContextValue = {
   unreadNotificationCount: number;
   activities: ActivityItem[];
   dashboardStats: DashboardStats;
+  dashboardPendingItems: DashboardPendingItem[];
+  pendingDetailsPath: string;
   closingSummaries: EmployeeClosingSummary[];
   totalForecast: number;
   valesTotal: number;
@@ -193,18 +196,47 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const overtimeHours = formatMinutesAsHours(competenceTotals.overtimeMinutes);
   const overtimeEmployeeCount = countOvertimeEmployees(currentMovements, CURRENT_COMPETENCE);
 
+  const competenceLabel = competenceToLabel(CURRENT_COMPETENCE);
+
+  const dashboardPendingItems = useMemo<DashboardPendingItem[]>(() => {
+    if (isPro) {
+      return closingSummaries
+        .filter((item) => item.reviewStatus !== 'Revisado')
+        .map((item) => ({
+          id: `review-${item.employeeId}`,
+          type: 'Revisão de fechamento',
+          employeeName: item.employeeName,
+          description: `${item.role} · status ${item.reviewStatus.toLowerCase()}`,
+          dateLabel: competenceLabel,
+          actionLabel: 'Revisar fechamento',
+          actionPath: '/closings?filter=pending',
+        }));
+    }
+
+    return notifications
+      .filter((item) => !item.read && !item.proOnly)
+      .map((item) => ({
+        id: item.id,
+        type: item.title,
+        description: item.description,
+        dateLabel: item.time,
+        actionLabel: 'Conferir notificação',
+        actionPath: '/notifications?filter=unread',
+      }));
+  }, [closingSummaries, competenceLabel, isPro, notifications]);
+
+  const pendingDetailsPath = isPro ? '/closings?filter=pending' : '/notifications?filter=unread';
+
   const dashboardStats = useMemo<DashboardStats>(
     () => ({
       activeEmployees: employees.filter((employee) => employee.status === 'Ativo' || employee.status === 'Ativa').length,
       monthForecast: totalForecast,
       overtimeHours,
       overtimeEmployeeCount,
-      pendingCount: isPro
-        ? closingSummaries.filter((item) => item.reviewStatus !== 'Revisado').length
-        : notifications.filter((item) => !item.read && !item.proOnly).length,
-      competenceLabel: competenceToLabel(CURRENT_COMPETENCE),
+      pendingCount: dashboardPendingItems.length,
+      competenceLabel,
     }),
-    [closingSummaries, employees, isPro, notifications, overtimeEmployeeCount, overtimeHours, totalForecast],
+    [competenceLabel, dashboardPendingItems.length, employees, overtimeEmployeeCount, overtimeHours, totalForecast],
   );
 
   const getMovementsForDate = useCallback(
@@ -369,13 +401,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppDataContextValue>(
     () => ({
       currentCompetence: CURRENT_COMPETENCE,
-      competenceLabel: competenceToLabel(CURRENT_COMPETENCE),
+      competenceLabel,
       competenceStatus: competenceState.status,
       movements: currentMovements,
       notifications,
       unreadNotificationCount,
       activities,
       dashboardStats,
+      dashboardPendingItems,
+      pendingDetailsPath,
       closingSummaries,
       totalForecast,
       valesTotal: competenceTotals.vales,
@@ -401,10 +435,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [
       activities,
       closeCompetence,
+      competenceLabel,
       competenceState,
       competenceTotals,
       currentMovements,
       dashboardStats,
+      dashboardPendingItems,
+      pendingDetailsPath,
       closingSummaries,
       getEmployeeSummary,
       getMovementsForDate,

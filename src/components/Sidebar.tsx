@@ -136,7 +136,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }, [collapsed, sidebarWidth]);
 
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
-    width: sidebarWidth.value + SIDEBAR_EDGE_TOGGLE.width / 2,
+    width: sidebarWidth.value,
   }));
 
   const sidebarClipAnimatedStyle = useAnimatedStyle(() => ({
@@ -215,7 +215,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               accessibilityRole="button"
               accessibilityLabel={sidebarLinkLabel}
               accessibilityState={{ selected: isProRouteActive }}>
-              <NavIcon type="chart" active={isProRouteActive} />
+              <NavIcon type="pro" active={isProRouteActive} />
             </Pressable>
           ) : (
             <View style={styles.planCard}>
@@ -276,24 +276,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 const styles = StyleSheet.create({
   sidebarOuter: {
     flexShrink: 0,
+    alignSelf: 'stretch',
     position: 'relative',
     overflow: 'visible',
     zIndex: 20,
-    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
   },
   sidebarClip: {
     backgroundColor: BrandColors.graphite,
     paddingVertical: 24,
     justifyContent: 'flex-start',
     overflow: 'hidden',
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
+    flex: 1,
     ...(Platform.OS === 'web'
       ? ({
-          minHeight: '100vh' as unknown as number,
           display: 'flex',
           flexDirection: 'column',
         } as object)
-      : { flex: 1 }),
+      : {}),
   },
   edgeToggle: {
     position: 'absolute',
@@ -378,8 +378,8 @@ const styles = StyleSheet.create({
     bottom: 6,
   },
   navIconWrap: {
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,

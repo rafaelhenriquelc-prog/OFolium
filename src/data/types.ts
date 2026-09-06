@@ -125,3 +125,14 @@ export type DashboardStats = {
   pendingCount: number;
   competenceLabel: string;
 };
+
+export type DashboardPendingItem = {
+  id: string;
+  type: string;
+  employeeName?: string;
+  description: string;
+  dateLabel: string;
+  actionLabel: string;
+  /** Rota interna para resolver ou acessar o registro relacionado. */
+  actionPath: string;
+};
