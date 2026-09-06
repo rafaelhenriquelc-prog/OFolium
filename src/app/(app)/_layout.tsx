@@ -10,6 +10,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { BrandColors } from '@/constants/colors';
 import { mobilePageContain } from '@/constants/layout';
 import { AppDataProvider } from '@/contexts/AppDataContext';
+import { AppShellUIProvider } from '@/contexts/AppShellUIContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { EmployeesProvider } from '@/contexts/EmployeesContext';
 import { PlanProvider } from '@/contexts/PlanContext';
@@ -26,24 +27,26 @@ function AppShell() {
   }, [isCompactLayout]);
 
   return (
-    <View style={styles.root}>
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((current) => !current)}
-      />
-      <View style={styles.mainColumn}>
-        <DemoBanner />
-        <View
-          style={[
-            styles.content,
-            isCompactLayout && mobilePageContain,
-            isCompactLayout && { paddingTop: insets.top },
-          ]}>
-          <Slot />
+    <AppShellUIProvider>
+      <View style={styles.root}>
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((current) => !current)}
+        />
+        <View style={styles.mainColumn}>
+          <DemoBanner />
+          <View
+            style={[
+              styles.content,
+              isCompactLayout && mobilePageContain,
+              isCompactLayout && { paddingTop: insets.top },
+            ]}>
+            <Slot />
+          </View>
         </View>
+        {isCompactLayout && <MobileBottomNav />}
       </View>
-      {isCompactLayout && <MobileBottomNav />}
-    </View>
+    </AppShellUIProvider>
   );
 }
 

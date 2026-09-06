@@ -1,9 +1,10 @@
 import { useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { EmployeeTable } from '@/components/EmployeeTable';
+import { FadeSlideIn } from '@/components/animation/FadeSlideIn';
 import { Header } from '@/components/Header';
 import { NotificationsPanel } from '@/components/NotificationsPanel';
 import { RecentActivity } from '@/components/RecentActivity';
@@ -11,12 +12,29 @@ import { StatCardsRow } from '@/components/StatCard';
 import { TipCard } from '@/components/TipCard';
 import { WeeklyRecords } from '@/components/WeeklyRecords';
 import { BrandColors } from '@/constants/colors';
+import { useAppShellUI } from '@/contexts/AppShellUIContext';
 import { useAppData } from '@/contexts/AppDataContext';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { mobilePageContain, mobileStackedSection } from '@/constants/layout';
 
+const DASHBOARD_HEADER_DURATION = 400;
+const DASHBOARD_HEADER_OFFSET = 8;
+const DASHBOARD_STAT_BASE_DELAY = 100;
+const DASHBOARD_STAT_STAGGER = 60;
+const DASHBOARD_STAT_DURATION = 400;
+const DASHBOARD_STAT_OFFSET = 10;
+const DASHBOARD_SECTION_DURATION = 400;
+const DASHBOARD_SECTION_OFFSET = 8;
+const DASHBOARD_MIDDLE_DELAY = 380;
+const DASHBOARD_BOTTOM_DELAY = 460;
+
 export default function DashboardScreen() {
   const { ProFeatureModalHost } = useAppData();
+  const { consumeDashboardEntryAnimation } = useAppShellUI();
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const shouldAnimateEntry = useRef(consumeDashboardEntryAnimation()).current;
+  const animateEntry = shouldAnimateEntry && !prefersReducedMotion;
   const { isMobile, isCompactLayout, contentPaddingHorizontal, contentPaddingBottom } =
     useResponsiveLayout();
   const isCompact = isCompactLayout;
@@ -93,29 +111,57 @@ export default function DashboardScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}>
-        <Header
-          onNotificationPress={toggleNotificationsPanel}
-          isNotificationsPanelOpen={isNotificationsPanelOpen}
+        <FadeSlideIn
+          duration={DASHBOARD_HEADER_DURATION}
+          translateY={DASHBOARD_HEADER_OFFSET}
+          enabled={animateEntry}>
+          <Header
+            onNotificationPress={toggleNotificationsPanel}
+            isNotificationsPanelOpen={isNotificationsPanelOpen}
+          />
+        </FadeSlideIn>
+        <StatCardsRow
+          entryAnimation={
+            animateEntry
+              ? {
+                  baseDelay: DASHBOARD_STAT_BASE_DELAY,
+                  stagger: DASHBOARD_STAT_STAGGER,
+                  duration: DASHBOARD_STAT_DURATION,
+                  translateY: DASHBOARD_STAT_OFFSET,
+                }
+              : undefined
+          }
         />
-        <StatCardsRow />
 
-        <View style={[styles.middleRow, isCompactLayout && styles.middleRowMobile]}>
-          <View style={isCompactLayout ? mobileStackedSection : undefined}>
-            <EmployeeTable />
+        <FadeSlideIn
+          delay={DASHBOARD_MIDDLE_DELAY}
+          duration={DASHBOARD_SECTION_DURATION}
+          translateY={DASHBOARD_SECTION_OFFSET}
+          enabled={animateEntry}>
+          <View style={[styles.middleRow, isCompactLayout && styles.middleRowMobile]}>
+            <View style={isCompactLayout ? mobileStackedSection : undefined}>
+              <EmployeeTable />
+            </View>
+            <View style={isCompactLayout ? mobileStackedSection : undefined}>
+              <WeeklyRecords />
+            </View>
           </View>
-          <View style={isCompactLayout ? mobileStackedSection : undefined}>
-            <WeeklyRecords />
-          </View>
-        </View>
+        </FadeSlideIn>
 
-        <View style={[styles.bottomRow, isCompactLayout && styles.bottomRowMobile]}>
-          <View style={isCompactLayout ? mobileStackedSection : undefined}>
-            <RecentActivity />
+        <FadeSlideIn
+          delay={DASHBOARD_BOTTOM_DELAY}
+          duration={DASHBOARD_SECTION_DURATION}
+          translateY={DASHBOARD_SECTION_OFFSET}
+          enabled={animateEntry}>
+          <View style={[styles.bottomRow, isCompactLayout && styles.bottomRowMobile]}>
+            <View style={isCompactLayout ? mobileStackedSection : undefined}>
+              <RecentActivity />
+            </View>
+            <View style={isCompactLayout ? mobileStackedSection : undefined}>
+              <TipCard />
+            </View>
           </View>
-          <View style={isCompactLayout ? mobileStackedSection : undefined}>
-            <TipCard />
-          </View>
-        </View>
+        </FadeSlideIn>
       </ScrollView>
 
       <NotificationsPanel

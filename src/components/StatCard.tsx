@@ -1,6 +1,7 @@
 import { Image, type ImageSource } from 'expo-image';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
+import { FadeSlideIn } from '@/components/animation/FadeSlideIn';
 import { BrandColors, Shadows } from '@/constants/colors';
 import { STAT_ICONS } from '@/constants/statIcons';
 import {
@@ -76,50 +77,112 @@ export function StatCard({
   );
 }
 
-export function StatCardsRow() {
+type StatCardsRowEntryAnimation = {
+  baseDelay?: number;
+  stagger?: number;
+  duration?: number;
+  translateY?: number;
+};
+
+type StatCardsRowProps = {
+  entryAnimation?: StatCardsRowEntryAnimation;
+};
+
+function wrapStatCard(
+  card: React.ReactElement,
+  index: number,
+  enterStyle: ViewStyle | undefined,
+  entryAnimation?: StatCardsRowEntryAnimation,
+) {
+  if (!entryAnimation) {
+    return card;
+  }
+
+  const { baseDelay = 0, stagger = 60, duration = 400, translateY = 10 } = entryAnimation;
+
+  return (
+    <FadeSlideIn
+      key={card.key ?? index}
+      delay={baseDelay + index * stagger}
+      duration={duration}
+      translateY={translateY}
+      style={enterStyle}>
+      {card}
+    </FadeSlideIn>
+  );
+}
+
+export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
   const { dashboardStats } = useAppData();
   const { isMobile } = useResponsiveLayout();
 
-  const cards = (
-    <>
-      <StatCard
-        label="Funcionários ativos"
-        value={String(dashboardStats.activeEmployees)}
-        detail={dashboardStats.competenceLabel}
-        iconImage={STAT_ICONS.funcionariosAtivos}
-        iconBg={BrandColors.orangeLight}
-        highlighted
-        compact={isMobile}
-        fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
-      />
-      <StatCard
-        label="Previsão do mês"
-        value={formatCurrency(dashboardStats.monthForecast)}
-        detail="Valor gerencial previsto"
-        iconImage={STAT_ICONS.previsaoDoMes}
-        iconBg={BrandColors.blueLight}
-        compact={isMobile}
-        fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
-      />
-      <StatCard
-        label="Horas extras"
-        value={dashboardStats.overtimeHours}
-        detail={`${dashboardStats.overtimeEmployeeCount} funcionário${dashboardStats.overtimeEmployeeCount === 1 ? '' : 's'}`}
-        iconImage={STAT_ICONS.horasExtras}
-        iconBg={BrandColors.amberLight}
-        compact={isMobile}
-        fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
-      />
-      <StatCard
-        label="Pendências"
-        value={String(dashboardStats.pendingCount)}
-        detailAction="Ver detalhes"
-        iconImage={STAT_ICONS.pendencias}
-        iconBg={BrandColors.redLight}
-        compact={isMobile}
-        fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
-      />
-    </>
+  const mobileEnterStyle = isMobile
+    ? ({ width: MOBILE_STAT_CARD_WIDTH, flexShrink: 0 } as ViewStyle)
+    : undefined;
+  const desktopEnterStyle = isMobile ? undefined : styles.statCardEnter;
+
+  const cardElements: { card: React.ReactElement; enterStyle?: ViewStyle }[] = [
+    {
+      enterStyle: mobileEnterStyle ?? desktopEnterStyle,
+      card: (
+        <StatCard
+          label="Funcionários ativos"
+          value={String(dashboardStats.activeEmployees)}
+          detail={dashboardStats.competenceLabel}
+          iconImage={STAT_ICONS.funcionariosAtivos}
+          iconBg={BrandColors.orangeLight}
+          highlighted
+          compact={isMobile}
+          fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
+        />
+      ),
+    },
+    {
+      enterStyle: mobileEnterStyle ?? desktopEnterStyle,
+      card: (
+        <StatCard
+          label="Previsão do mês"
+          value={formatCurrency(dashboardStats.monthForecast)}
+          detail="Valor gerencial previsto"
+          iconImage={STAT_ICONS.previsaoDoMes}
+          iconBg={BrandColors.blueLight}
+          compact={isMobile}
+          fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
+        />
+      ),
+    },
+    {
+      enterStyle: mobileEnterStyle ?? desktopEnterStyle,
+      card: (
+        <StatCard
+          label="Horas extras"
+          value={dashboardStats.overtimeHours}
+          detail={`${dashboardStats.overtimeEmployeeCount} funcionário${dashboardStats.overtimeEmployeeCount === 1 ? '' : 's'}`}
+          iconImage={STAT_ICONS.horasExtras}
+          iconBg={BrandColors.amberLight}
+          compact={isMobile}
+          fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
+        />
+      ),
+    },
+    {
+      enterStyle: mobileEnterStyle ?? desktopEnterStyle,
+      card: (
+        <StatCard
+          label="Pendências"
+          value={String(dashboardStats.pendingCount)}
+          detailAction="Ver detalhes"
+          iconImage={STAT_ICONS.pendencias}
+          iconBg={BrandColors.redLight}
+          compact={isMobile}
+          fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
+        />
+      ),
+    },
+  ];
+
+  const cards = cardElements.map(({ card, enterStyle }, index) =>
+    wrapStatCard(card, index, enterStyle, entryAnimation),
   );
 
   if (isMobile) {
@@ -138,6 +201,10 @@ export function StatCardsRow() {
 }
 
 const styles = StyleSheet.create({
+  statCardEnter: {
+    flex: 1,
+    minWidth: 180,
+  },
   row: {
     flexDirection: 'row',
     gap: 16,

@@ -1,9 +1,17 @@
 import { Image } from 'expo-image';
 import { usePathname, useRouter, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import Animated, {
+  type AnimatedStyle,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 
+import { ENTRY_EASE_OUT } from '@/components/animation/FadeSlideIn';
 import { NavIcon } from '@/components/navigation/NavIcon';
 import { BrandColors, Shadows } from '@/constants/colors';
 import {
@@ -12,10 +20,16 @@ import {
   SIDEBAR_WIDTH_EXPANDED,
 } from '@/constants/layout';
 import { isNavItemActive, MAIN_DESKTOP_NAV, SECONDARY_NAV, type NavItem } from '@/constants/navigation';
+import { useAppShellUI } from '@/contexts/AppShellUIContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEmployees } from '@/contexts/EmployeesContext';
 import { usePlan } from '@/contexts/PlanContext';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+
+const SIDEBAR_TOGGLE_HINT_DELAY_MS = 700;
+const SIDEBAR_TOGGLE_HINT_DISTANCE = 4;
+const SIDEBAR_TOGGLE_HINT_HALF_MS = 200;
 
 type SidebarProps = {
   collapsed: boolean;
@@ -54,22 +68,62 @@ function NavButton({
   );
 }
 
-function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+function SidebarToggle({
+  collapsed,
+  onToggle,
+  playHint,
+  positionStyle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  playHint?: boolean;
+  positionStyle?: AnimatedStyle<ViewStyle>;
+}) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const nudgeX = useSharedValue(0);
+  const collapsedRef = useRef(collapsed);
+
+  collapsedRef.current = collapsed;
+
+  useEffect(() => {
+    if (!playHint || prefersReducedMotion) {
+      return;
+    }
+
+    const direction = collapsedRef.current ? SIDEBAR_TOGGLE_HINT_DISTANCE : -SIDEBAR_TOGGLE_HINT_DISTANCE;
+
+    nudgeX.value = withDelay(
+      SIDEBAR_TOGGLE_HINT_DELAY_MS,
+      withSequence(
+        withTiming(direction, { duration: SIDEBAR_TOGGLE_HINT_HALF_MS, easing: ENTRY_EASE_OUT }),
+        withTiming(0, { duration: SIDEBAR_TOGGLE_HINT_HALF_MS, easing: ENTRY_EASE_OUT }),
+      ),
+    );
+  }, [nudgeX, playHint, prefersReducedMotion]);
+
+  const nudgeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: nudgeX.value }],
+  }));
+
   return (
-    <Pressable
-      style={({ pressed }) => [styles.edgeToggle, pressed && styles.edgeTogglePressed]}
-      onPress={onToggle}
-      accessibilityRole="button"
-      accessibilityLabel={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>
-      <Text style={styles.edgeToggleArrow} accessibilityElementsHidden importantForAccessibility="no">
-        {collapsed ? '›' : '‹'}
-      </Text>
-    </Pressable>
+    <Animated.View style={[styles.edgeToggle, positionStyle, nudgeStyle]} pointerEvents="box-none">
+      <Pressable
+        style={({ pressed }) => [styles.edgeTogglePressable, pressed && styles.edgeTogglePressed]}
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityLabel={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>
+        <Text style={styles.edgeToggleArrow} accessibilityElementsHidden importantForAccessibility="no">
+          {collapsed ? '›' : '‹'}
+        </Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { isCompactLayout } = useResponsiveLayout();
+  const { consumeSidebarToggleHint } = useAppShellUI();
+  const playToggleHint = useRef(!isCompactLayout && consumeSidebarToggleHint()).current;
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
@@ -88,17 +142,41 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }, [menuOpen, chevronRotation]);
 
   useEffect(() => {
-    if (collapsed) {
+    if (Platform.OS !== 'web' || !menuOpen || !collapsed) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest('[data-sidebar-user-menu="true"]') ||
+        target?.closest('[data-sidebar-user-trigger="true"]')
+      ) {
+        return;
+      }
       setMenuOpen(false);
-    }
-  }, [collapsed]);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [collapsed, menuOpen]);
 
   const chevronAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${chevronRotation.value}deg` }],
   }));
 
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
+    width: sidebarWidth.value + SIDEBAR_EDGE_TOGGLE.width / 2,
+  }));
+
+  const sidebarClipAnimatedStyle = useAnimatedStyle(() => ({
     width: sidebarWidth.value,
+  }));
+
+  const toggleAnimatedStyle = useAnimatedStyle(() => ({
+    left: sidebarWidth.value - SIDEBAR_EDGE_TOGGLE.width / 2,
+  }));
+
+  const userMenuPopoverStyle = useAnimatedStyle(() => ({
+    left: sidebarWidth.value + 8,
   }));
 
   const { activeCount } = useEmployees();
@@ -122,8 +200,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const planPercent = Math.round((activeCount / activeLimit) * 100);
 
   return (
-    <Animated.View style={[styles.sidebarShell, sidebarAnimatedStyle]}>
-      <View style={styles.sidebar}>
+    <Animated.View style={[styles.sidebarOuter, sidebarAnimatedStyle]}>
+      <Animated.View style={[styles.sidebarClip, sidebarClipAnimatedStyle]}>
         {!collapsed ? (
           <Pressable
             style={({ pressed }) => [styles.logoContainer, pressed && styles.logoPressed]}
@@ -193,19 +271,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </View>
           )}
 
-          <View style={[styles.userMenuWrapper, collapsed && styles.userMenuWrapperCollapsed]}>
-            {menuOpen && (
-              <View style={[styles.userMenu, collapsed && styles.userMenuCollapsed]}>
-                {collapsed && (
-                  <Pressable
-                    style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
-                    onPress={() => {
-                      setMenuOpen(false);
-                      router.push('/pro' as Href);
-                    }}>
-                    <Text style={styles.userMenuItemText}>{sidebarLinkLabel}</Text>
-                  </Pressable>
-                )}
+          <View style={styles.userMenuWrapper}>
+            {!collapsed && menuOpen && (
+              <View style={styles.userMenu}>
                 <Pressable
                   style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
                   onPress={handleLogout}>
@@ -215,6 +283,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             )}
 
             <Pressable
+              {...({ dataSet: { sidebarUserTrigger: 'true' } } as object)}
               style={({ pressed }) => [
                 styles.userSection,
                 collapsed && styles.userSectionCollapsed,
@@ -241,42 +310,85 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </Pressable>
           </View>
         </View>
-      </View>
+      </Animated.View>
 
-      <SidebarToggle collapsed={collapsed} onToggle={onToggle} />
+      {collapsed && menuOpen && (
+        <Animated.View
+          {...({ dataSet: { sidebarUserMenu: 'true' } } as object)}
+          style={[styles.userMenuPopover, userMenuPopoverStyle]}
+          pointerEvents="box-none">
+          <View style={styles.userMenuPopoverCard}>
+            <View style={styles.userMenuPopoverHeader}>
+              <Text style={styles.userMenuPopoverName}>{displayName}</Text>
+              <Text style={styles.userMenuPopoverRole}>{displayRole}</Text>
+            </View>
+            <View style={styles.userMenuPopoverDivider} />
+            <Pressable
+              style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
+              onPress={() => {
+                setMenuOpen(false);
+                router.push('/pro' as Href);
+              }}>
+              <Text style={styles.userMenuItemText}>{sidebarLinkLabel}</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
+              onPress={handleLogout}>
+              <Text style={styles.userMenuItemText}>Sair</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
+
+      <SidebarToggle
+        collapsed={collapsed}
+        onToggle={onToggle}
+        playHint={playToggleHint}
+        positionStyle={toggleAnimatedStyle}
+      />
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  sidebarShell: {
+  sidebarOuter: {
     flexShrink: 0,
     position: 'relative',
     overflow: 'visible',
+    zIndex: 20,
     ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
   },
-  sidebar: {
-    flex: 1,
+  sidebarClip: {
     backgroundColor: BrandColors.graphite,
     paddingVertical: 24,
     justifyContent: 'flex-start',
     overflow: 'hidden',
-    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
+    alignSelf: 'flex-start',
+    ...(Platform.OS === 'web'
+      ? ({
+          minHeight: '100vh' as unknown as number,
+          display: 'flex',
+          flexDirection: 'column',
+        } as object)
+      : { flex: 1 }),
   },
   edgeToggle: {
     position: 'absolute',
-    right: -SIDEBAR_EDGE_TOGGLE.width / 2,
     top: '50%',
     width: SIDEBAR_EDGE_TOGGLE.width,
     height: SIDEBAR_EDGE_TOGGLE.height,
     marginTop: -SIDEBAR_EDGE_TOGGLE.height / 2,
+    borderRadius: 8,
+    zIndex: 40,
+  },
+  edgeTogglePressable: {
+    flex: 1,
     borderRadius: 8,
     backgroundColor: BrandColors.white,
     borderWidth: 1,
     borderColor: BrandColors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
     ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
   },
   edgeTogglePressed: {
@@ -428,10 +540,6 @@ const styles = StyleSheet.create({
   userMenuWrapper: {
     gap: 8,
   },
-  userMenuWrapperCollapsed: {
-    alignItems: 'center',
-    zIndex: 20,
-  },
   userMenu: {
     backgroundColor: BrandColors.graphiteLight,
     borderRadius: 10,
@@ -439,14 +547,38 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.08)',
     overflow: 'hidden',
   },
-  userMenuCollapsed: {
+  userMenuPopover: {
     position: 'absolute',
-    left: '100%',
-    bottom: 0,
-    marginLeft: 8,
-    minWidth: 180,
-    zIndex: 30,
+    bottom: 24,
+    zIndex: 50,
+    minWidth: 220,
+  },
+  userMenuPopoverCard: {
+    backgroundColor: BrandColors.graphiteLight,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
     ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
+  },
+  userMenuPopoverHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    gap: 2,
+  },
+  userMenuPopoverName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: BrandColors.white,
+  },
+  userMenuPopoverRole: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.55)',
+  },
+  userMenuPopoverDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   userMenuItem: {
     paddingVertical: 12,
