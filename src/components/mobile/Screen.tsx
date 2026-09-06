@@ -34,8 +34,10 @@ export function Screen({ children, contentContainerStyle, contentStyle, style, .
 const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   content: {
     flexGrow: 1,
+    backgroundColor: 'transparent',
   },
 });

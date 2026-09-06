@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { usePathname, useRouter, type Href } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated, {
   type AnimatedStyle,
@@ -19,7 +19,7 @@ import {
   SIDEBAR_WIDTH_COLLAPSED,
   SIDEBAR_WIDTH_EXPANDED,
 } from '@/constants/layout';
-import { isNavItemActive, MAIN_DESKTOP_NAV, SECONDARY_NAV, type NavItem } from '@/constants/navigation';
+import { isNavItemActive, MAIN_DESKTOP_NAV, DESKTOP_SECONDARY_NAV, type NavItem } from '@/constants/navigation';
 import { useAppShellUI } from '@/contexts/AppShellUIContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEmployees } from '@/contexts/EmployeesContext';
@@ -126,9 +126,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const playToggleHint = useRef(!isCompactLayout && consumeSidebarToggleHint()).current;
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const chevronRotation = useSharedValue(0);
+  const { user } = useAuth();
   const sidebarWidth = useSharedValue(collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED);
 
   useEffect(() => {
@@ -136,32 +134,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       duration: 220,
     });
   }, [collapsed, sidebarWidth]);
-
-  useEffect(() => {
-    chevronRotation.value = withTiming(menuOpen ? 180 : 0, { duration: 200 });
-  }, [menuOpen, chevronRotation]);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !menuOpen || !collapsed) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.closest('[data-sidebar-user-menu="true"]') ||
-        target?.closest('[data-sidebar-user-trigger="true"]')
-      ) {
-        return;
-      }
-      setMenuOpen(false);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [collapsed, menuOpen]);
-
-  const chevronAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${chevronRotation.value}deg` }],
-  }));
 
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
     width: sidebarWidth.value + SIDEBAR_EDGE_TOGGLE.width / 2,
@@ -175,10 +147,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     left: sidebarWidth.value - SIDEBAR_EDGE_TOGGLE.width / 2,
   }));
 
-  const userMenuPopoverStyle = useAnimatedStyle(() => ({
-    left: sidebarWidth.value + 8,
-  }));
-
   const { activeCount } = useEmployees();
   const { planName, activeLimit, sidebarLinkLabel } = usePlan();
 
@@ -190,12 +158,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const displayRole = user?.role || 'Administrador';
   const displayInitials = user?.initials || 'LA';
   const isProRouteActive = pathname === '/pro';
-
-  const handleLogout = async () => {
-    setMenuOpen(false);
-    await logout();
-    router.replace('/login');
-  };
+  const isSettingsRouteActive = pathname === '/settings';
 
   const planPercent = Math.round((activeCount / activeLimit) * 100);
 
@@ -230,7 +193,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {!collapsed && <View style={styles.divider} />}
 
         <View style={[styles.navSection, collapsed && styles.navSectionCollapsed]}>
-          {SECONDARY_NAV.map((item) => (
+          {DESKTOP_SECONDARY_NAV.map((item) => (
             <NavButton
               key={item.label}
               item={item}
@@ -271,74 +234,34 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </View>
           )}
 
-          <View style={styles.userMenuWrapper}>
-            {!collapsed && menuOpen && (
-              <View style={styles.userMenu}>
-                <Pressable
-                  style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
-                  onPress={handleLogout}>
-                  <Text style={styles.userMenuItemText}>Sair</Text>
-                </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.userSection,
+              collapsed && styles.userSectionCollapsed,
+              isSettingsRouteActive && styles.userSectionActive,
+              pressed && styles.userSectionPressed,
+            ]}
+            onPress={() => router.push('/settings' as Href)}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir configurações da conta"
+            accessibilityState={{ selected: isSettingsRouteActive }}>
+            {isSettingsRouteActive && (
+              <View style={[styles.activeIndicator, collapsed && styles.activeIndicatorCollapsed]} />
+            )}
+            <View style={styles.userAvatar}>
+              <Text style={styles.userAvatarText}>{displayInitials}</Text>
+            </View>
+            {!collapsed && (
+              <View style={styles.userInfo}>
+                <Text style={[styles.userName, isSettingsRouteActive && styles.userNameActive]}>
+                  {displayName}
+                </Text>
+                <Text style={styles.userRole}>{displayRole}</Text>
               </View>
             )}
-
-            <Pressable
-              {...({ dataSet: { sidebarUserTrigger: 'true' } } as object)}
-              style={({ pressed }) => [
-                styles.userSection,
-                collapsed && styles.userSectionCollapsed,
-                pressed && styles.userSectionPressed,
-              ]}
-              onPress={() => setMenuOpen((open) => !open)}
-              accessibilityRole="button"
-              accessibilityLabel={collapsed ? `Menu de ${displayName}` : undefined}
-              accessibilityState={{ expanded: menuOpen }}>
-              <View style={styles.userAvatar}>
-                <Text style={styles.userAvatarText}>{displayInitials}</Text>
-              </View>
-              {!collapsed && (
-                <>
-                  <View style={styles.userInfo}>
-                    <Text style={styles.userName}>{displayName}</Text>
-                    <Text style={styles.userRole}>{displayRole}</Text>
-                  </View>
-                  <Animated.View style={[styles.chevronWrap, chevronAnimatedStyle]}>
-                    <Text style={[styles.userChevron, menuOpen && styles.userChevronOpen]}>▾</Text>
-                  </Animated.View>
-                </>
-              )}
-            </Pressable>
-          </View>
+          </Pressable>
         </View>
       </Animated.View>
-
-      {collapsed && menuOpen && (
-        <Animated.View
-          {...({ dataSet: { sidebarUserMenu: 'true' } } as object)}
-          style={[styles.userMenuPopover, userMenuPopoverStyle]}
-          pointerEvents="box-none">
-          <View style={styles.userMenuPopoverCard}>
-            <View style={styles.userMenuPopoverHeader}>
-              <Text style={styles.userMenuPopoverName}>{displayName}</Text>
-              <Text style={styles.userMenuPopoverRole}>{displayRole}</Text>
-            </View>
-            <View style={styles.userMenuPopoverDivider} />
-            <Pressable
-              style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
-              onPress={() => {
-                setMenuOpen(false);
-                router.push('/pro' as Href);
-              }}>
-              <Text style={styles.userMenuItemText}>{sidebarLinkLabel}</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}
-              onPress={handleLogout}>
-              <Text style={styles.userMenuItemText}>Sair</Text>
-            </Pressable>
-          </View>
-        </Animated.View>
-      )}
 
       <SidebarToggle
         collapsed={collapsed}
@@ -537,61 +460,6 @@ const styles = StyleSheet.create({
   proIconButtonPressed: {
     opacity: 0.8,
   },
-  userMenuWrapper: {
-    gap: 8,
-  },
-  userMenu: {
-    backgroundColor: BrandColors.graphiteLight,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    overflow: 'hidden',
-  },
-  userMenuPopover: {
-    position: 'absolute',
-    bottom: 24,
-    zIndex: 50,
-    minWidth: 220,
-  },
-  userMenuPopoverCard: {
-    backgroundColor: BrandColors.graphiteLight,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    overflow: 'hidden',
-    ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
-  },
-  userMenuPopoverHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 10,
-    gap: 2,
-  },
-  userMenuPopoverName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: BrandColors.white,
-  },
-  userMenuPopoverRole: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.55)',
-  },
-  userMenuPopoverDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  userMenuItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  userMenuItemPressed: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  userMenuItemText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: BrandColors.white,
-  },
   userSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -599,6 +467,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
     borderRadius: 10,
+    position: 'relative',
+  },
+  userSectionActive: {
+    backgroundColor: BrandColors.orangeLight,
   },
   userSectionCollapsed: {
     justifyContent: 'center',
@@ -606,7 +478,7 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   userSectionPressed: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    opacity: 0.85,
   },
   userAvatar: {
     width: 36,
@@ -632,18 +504,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: BrandColors.white,
   },
+  userNameActive: {
+    fontWeight: '700',
+  },
   userRole: {
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.45)',
-  },
-  userChevron: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.35)',
-  },
-  chevronWrap: {
-    flexShrink: 0,
-  },
-  userChevronOpen: {
-    color: BrandColors.orange,
   },
 });

@@ -1,6 +1,6 @@
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Screen } from '@/components/mobile/Screen';
 
@@ -15,6 +15,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePlan } from '@/contexts/PlanContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { formatCnpjInput, formatPhoneInput } from '@/utils/masks';
+import { readNotificationsEnabled, writeNotificationsEnabled } from '@/utils/localPreferences';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -49,12 +50,24 @@ export default function SettingsScreen() {
   const [isSavingBusiness, setIsSavingBusiness] = useState(false);
   const [passwordError, setPasswordError] = useState<string>();
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [preferenceSuccessMessage, setPreferenceSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNotificationsEnabled(readNotificationsEnabled());
+  }, []);
 
   useEffect(() => {
     if (!saveSuccessMessage) return;
     const timer = setTimeout(() => clearSaveSuccessMessage(), 4000);
     return () => clearTimeout(timer);
   }, [saveSuccessMessage, clearSaveSuccessMessage]);
+
+  useEffect(() => {
+    if (!preferenceSuccessMessage) return;
+    const timer = setTimeout(() => setPreferenceSuccessMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [preferenceSuccessMessage]);
 
   useEffect(() => {
     setName(user?.name ?? '');
@@ -149,13 +162,21 @@ export default function SettingsScreen() {
     router.replace('/login');
   };
 
+  const handleToggleNotifications = (enabled: boolean) => {
+    setNotificationsEnabled(enabled);
+    writeNotificationsEnabled(enabled);
+    setPreferenceSuccessMessage('Preferência de notificações atualizada.');
+  };
+
+  const bannerMessage = saveSuccessMessage ?? preferenceSuccessMessage;
+
   return (
     <Screen contentStyle={isCompactLayout ? styles.contentCompact : styles.contentDesktop}>
       <PageHeader title="Configurações" subtitle="Gerencie sua conta e preferências." />
 
-      {saveSuccessMessage && (
+      {bannerMessage && (
         <View style={styles.successBanner}>
-          <Text style={styles.successText}>{saveSuccessMessage}</Text>
+          <Text style={styles.successText}>{bannerMessage}</Text>
         </View>
       )}
 
@@ -292,10 +313,10 @@ export default function SettingsScreen() {
 
         <Card style={styles.section}>
           <Text style={styles.sectionTitle}>Preferências</Text>
-          <View style={styles.preferences}>
-            <PreferenceRow label="Notificações" value="Ativadas" />
-            <PreferenceRow label="Idioma" value="Português (BR)" />
-          </View>
+          <NotificationPreferenceRow
+            enabled={notificationsEnabled}
+            onToggle={handleToggleNotifications}
+          />
         </Card>
 
         <View style={styles.logoutSection}>
@@ -306,14 +327,30 @@ export default function SettingsScreen() {
   );
 }
 
-function PreferenceRow({ label, value }: { label: string; value: string }) {
+function NotificationPreferenceRow({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: (value: boolean) => void;
+}) {
+  const statusLabel = enabled ? 'Notificações ativadas' : 'Notificações desativadas';
+
   return (
-    <View style={styles.preferenceRow}>
-      <Text style={styles.preferenceLabel}>{label}</Text>
-      <View style={styles.preferenceValue}>
-        <Text style={styles.preferenceValueText}>{value}</Text>
-        <Text style={styles.preferenceChevron}>▾</Text>
+    <View style={styles.notificationPreferenceRow}>
+      <View style={styles.notificationPreferenceText}>
+        <Text style={styles.preferenceLabel}>Notificações</Text>
+        <Text style={styles.notificationStatus}>{statusLabel}</Text>
       </View>
+      <Switch
+        value={enabled}
+        onValueChange={onToggle}
+        trackColor={{ false: BrandColors.border, true: BrandColors.orange }}
+        thumbColor={Platform.OS === 'android' ? BrandColors.white : undefined}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: enabled }}
+        accessibilityLabel={statusLabel}
+      />
     </View>
   );
 }
@@ -367,21 +404,18 @@ const styles = StyleSheet.create({
   },
   planBadgeText: { fontSize: 14, fontWeight: '700', color: BrandColors.orange },
   planLimit: { fontSize: 14, color: BrandColors.textSecondary },
-  preferences: { gap: 12 },
-  preferenceRow: { gap: 6 },
-  preferenceLabel: { fontSize: 13, fontWeight: '600', color: BrandColors.textPrimary },
-  preferenceValue: {
+  notificationPreferenceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: BrandColors.offWhite,
-    borderWidth: 1,
-    borderColor: BrandColors.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    gap: 16,
   },
-  preferenceValueText: { fontSize: 14, color: BrandColors.textPrimary },
-  preferenceChevron: { fontSize: 12, color: BrandColors.textMuted },
+  notificationPreferenceText: {
+    flex: 1,
+    gap: 4,
+    minWidth: 0,
+  },
+  preferenceLabel: { fontSize: 13, fontWeight: '600', color: BrandColors.textPrimary },
+  notificationStatus: { fontSize: 14, color: BrandColors.textSecondary },
   logoutSection: { marginTop: 8 },
 });

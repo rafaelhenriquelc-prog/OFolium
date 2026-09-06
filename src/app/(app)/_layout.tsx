@@ -4,6 +4,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
+import { AppContentBackground } from '@/components/AppContentBackground';
 import { DemoBanner } from '@/components/DemoBanner';
 import { MobileBottomNav } from '@/components/mobile/MobileBottomNav';
 import { Sidebar } from '@/components/Sidebar';
@@ -35,14 +36,16 @@ function AppShell() {
         />
         <View style={styles.mainColumn}>
           <DemoBanner />
-          <View
-            style={[
-              styles.content,
-              isCompactLayout && mobilePageContain,
-              isCompactLayout && { paddingTop: insets.top },
-            ]}>
-            <Slot />
-          </View>
+          <AppContentBackground>
+            <View
+              style={[
+                styles.content,
+                isCompactLayout && mobilePageContain,
+                isCompactLayout && { paddingTop: insets.top },
+              ]}>
+              <Slot />
+            </View>
+          </AppContentBackground>
         </View>
         {isCompactLayout && <MobileBottomNav />}
       </View>
@@ -88,5 +91,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: 0,
+    backgroundColor: 'transparent',
   },
 });

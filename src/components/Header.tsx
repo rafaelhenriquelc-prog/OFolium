@@ -20,7 +20,6 @@ export function Header({ onNotificationPress, isNotificationsPanelOpen }: Header
   const { unreadNotificationCount } = useAppData();
   const { isMobile } = useResponsiveLayout();
   const firstName = user?.name?.trim().split(/\s+/)[0] || 'Lucas';
-  const initials = user?.initials || 'LA';
   const badgeCount = unreadNotificationCount > 0 ? String(unreadNotificationCount) : null;
 
   const handleNotificationPress = () => {
@@ -110,10 +109,6 @@ export function Header({ onNotificationPress, isNotificationsPanelOpen }: Header
             </View>
           )}
         </Pressable>
-
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials}</Text>
-        </View>
       </View>
     </View>
   );
@@ -241,21 +236,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: BrandColors.white,
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: BrandColors.orangeLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: BrandColors.white,
-    flexShrink: 0,
-  },
-  avatarText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: BrandColors.orange,
   },
 });

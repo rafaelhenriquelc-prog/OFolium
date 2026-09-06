@@ -19,8 +19,12 @@ export const MAIN_DESKTOP_NAV: NavItem[] = [
   { label: 'Relatórios', icon: 'chart', href: '/reports' },
 ];
 
-export const SECONDARY_NAV: NavItem[] = [
+export const DESKTOP_SECONDARY_NAV: NavItem[] = [
   { label: 'Notificações', icon: 'bell', href: '/notifications' },
+];
+
+export const SECONDARY_NAV: NavItem[] = [
+  ...DESKTOP_SECONDARY_NAV,
   { label: 'Configurações', icon: 'settings', href: '/settings' },
 ];
 
