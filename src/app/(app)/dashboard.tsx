@@ -1,4 +1,5 @@
 import { useFocusEffect } from 'expo-router';
+import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -9,6 +10,7 @@ import { RecentActivity } from '@/components/RecentActivity';
 import { StatCardsRow } from '@/components/StatCard';
 import { TipCard } from '@/components/TipCard';
 import { WeeklyRecords } from '@/components/WeeklyRecords';
+import { BrandColors } from '@/constants/colors';
 import { useAppData } from '@/contexts/AppDataContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { mobilePageContain, mobileStackedSection } from '@/constants/layout';
@@ -72,10 +74,18 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.mainArea}>
+      <Image
+        source={require('@/assets/images/fundo_geo2.png')}
+        style={styles.backgroundImage}
+        contentFit="cover"
+        contentPosition="center"
+      />
+      <View pointerEvents="none" style={styles.backgroundOverlay} />
       <ScrollView
-        style={[styles.scrollView, isCompactLayout && mobilePageContain]}
+        style={[styles.scrollView, styles.scrollViewTransparent, isCompactLayout && mobilePageContain]}
         contentContainerStyle={[
           styles.scrollContent,
+          styles.scrollContentTransparent,
           {
             paddingHorizontal: contentPaddingHorizontal,
             paddingBottom: contentPaddingBottom,
@@ -124,12 +134,44 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     minWidth: 0,
+    backgroundColor: BrandColors.background,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  backgroundImage: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 1,
+    zIndex: 0,
+  },
+  backgroundOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(244, 244, 246, 0.2)',
+    zIndex: 1,
   },
   scrollView: {
     flex: 1,
+    zIndex: 2,
+  },
+  scrollViewTransparent: {
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     paddingRight: 16,
+  },
+  scrollContentTransparent: {
+    backgroundColor: 'transparent',
   },
   middleRow: {
     flexDirection: 'row',

@@ -70,6 +70,7 @@ export default function LoginScreen() {
   return (
     <AuthLayout
       compactMobile
+      geometricBackground
       title="Gerencie sua equipe de forma simples."
       subtitle="Acesse sua conta para continuar."
       footer={isMobile ? <LoginLinks mobile /> : undefined}>

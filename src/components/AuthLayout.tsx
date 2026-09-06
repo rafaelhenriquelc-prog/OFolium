@@ -14,6 +14,8 @@ type AuthLayoutProps = {
   footer?: React.ReactNode;
   /** Layout mais compacto — usar apenas na tela de login mobile. */
   compactMobile?: boolean;
+  /** Fundo geométrico exclusivo da tela de login. */
+  geometricBackground?: boolean;
 };
 
 export function AuthLayout({
@@ -22,20 +24,26 @@ export function AuthLayout({
   children,
   footer,
   compactMobile,
+  geometricBackground = false,
 }: AuthLayoutProps) {
   const { width, height } = useWindowDimensions();
   const isMobile = width < MOBILE_BREAKPOINT;
   const compact = isMobile && compactMobile;
 
-  return (
+  const scrollView = (
     <ScrollView
       contentContainerStyle={[
         styles.scrollContent,
+        geometricBackground && styles.scrollContentTransparent,
         isMobile && !compact && styles.scrollContentMobile,
         compact && styles.scrollContentCompact,
         compact && { minHeight: height },
       ]}
-      style={styles.root}
+      style={
+        geometricBackground
+          ? [styles.root, styles.rootTransparent, styles.foregroundScroll]
+          : styles.root
+      }
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <View
@@ -73,12 +81,73 @@ export function AuthLayout({
       </View>
     </ScrollView>
   );
+
+  if (!geometricBackground) {
+    return scrollView;
+  }
+
+  return (
+    <View style={styles.backgroundRoot}>
+      <Image
+        source={require('@/assets/images/fundo_geo1.png')}
+        style={styles.backgroundImage}
+        contentFit="cover"
+        contentPosition="center"
+      />
+      <View pointerEvents="none" style={styles.backgroundOverlay} />
+      {scrollView}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
+  backgroundRoot: {
+    flex: 1,
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+    position: 'relative',
+    width: '100%',
+    ...(Platform.OS === 'web'
+      ? ({
+          minHeight: '100vh' as unknown as number,
+          height: '100vh' as unknown as number,
+        } as object)
+      : {}),
+  },
+  backgroundImage: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 1,
+    zIndex: 0,
+  },
+  backgroundOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    zIndex: 1,
+  },
+  foregroundScroll: {
+    zIndex: 2,
+  },
   root: {
     flex: 1,
     backgroundColor: BrandColors.graphite,
+  },
+  rootTransparent: {
+    backgroundColor: 'transparent',
+  },
+  scrollContentTransparent: {
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     flexGrow: 1,
