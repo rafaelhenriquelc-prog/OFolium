@@ -17,10 +17,19 @@ import {
   createEmployee,
   deactivateEmployeeRecord,
   listEmployeesByBusiness,
+  reactivateEmployeeRecord,
   updateEmployee,
 } from '@/services/employees';
+import { countMovementsForEmployee } from '@/services/movements';
 import { isDemoAccount } from '@/utils/demoAccount';
+import { getLocalTodayIso } from '@/utils/dateInput';
 import { isEmployeeActive } from '@/utils/employee';
+
+export const EMPLOYEE_LINKED_HISTORY_MESSAGE =
+  'Este funcionário possui registros financeiros vinculados. Para preservar o histórico, não é possível removê-lo permanentemente. Você pode desativá-lo.';
+
+const EMPLOYEE_DELETE_BLOCKED_MESSAGE =
+  'A exclusão não foi realizada. A tabela de movimentações ainda apaga os registros em cascata. A proteção no Supabase precisa ser autorizada antes de remover um funcionário de verdade.';
 
 export type NewEmployeeInput = {
   name: string;
@@ -40,6 +49,19 @@ export type AddEmployeeResult =
       message?: string;
     };
 
+export type EmployeeDetailsInput = {
+  name: string;
+  role: string;
+  baseSalary: number;
+  hireDate: string;
+  phone?: string;
+  email?: string;
+};
+
+export type EmployeeMutationResult =
+  | { success: true }
+  | { success: false; message: string };
+
 type EmployeesContextValue = {
   employees: Employee[];
   activeCount: number;
@@ -49,7 +71,11 @@ type EmployeesContextValue = {
   isDemoMode: boolean;
   reloadEmployees: () => Promise<void>;
   addEmployee: (input: NewEmployeeInput) => Promise<AddEmployeeResult>;
-  deactivateEmployee: (id: string) => Promise<void>;
+  updateEmployeeDetails: (id: string, input: EmployeeDetailsInput) => Promise<EmployeeMutationResult>;
+  deactivateEmployee: (id: string) => Promise<EmployeeMutationResult>;
+  reactivateEmployee: (id: string) => Promise<EmployeeMutationResult>;
+  removeEmployee: (id: string, hasLocalFinancialHistory?: boolean) => Promise<EmployeeMutationResult>;
+  countEmployeeMovements: (id: string) => Promise<{ count: number | null; message?: string }>;
   updateEmployeeSalary: (id: string, salary: number, effectiveDate: string) => Promise<void>;
   getEmployeeById: (id: string) => Employee | undefined;
 };
@@ -268,10 +294,94 @@ export function EmployeesProvider({ children }: { children: ReactNode }) {
     [activeCount, activeLimit, business?.id, employees, isDemoMode, isSubmitting],
   );
 
-  const deactivateEmployee = useCallback(
-    async (id: string) => {
+  const updateEmployeeDetails = useCallback(
+    async (id: string, input: EmployeeDetailsInput): Promise<EmployeeMutationResult> => {
       const current = employees.find((employee) => employee.id === id);
-      if (!current) return;
+      if (!current) {
+        return { success: false, message: 'Funcionário não encontrado.' };
+      }
+
+      const trimmedName = input.name.trim();
+      const trimmedRole = input.role.trim();
+      const trimmedPhone = input.phone?.trim() ?? '';
+      const trimmedEmail = input.email?.trim() ?? '';
+
+      if (!trimmedName || !trimmedRole) {
+        return { success: false, message: 'Preencha nome e cargo antes de salvar.' };
+      }
+
+      if (!Number.isFinite(input.baseSalary) || input.baseSalary < 0) {
+        return { success: false, message: 'Informe um salário base válido.' };
+      }
+
+      if (isDemoMode) {
+        const salaryChanged = current.baseSalary !== input.baseSalary;
+        setEmployees((list) =>
+          list.map((employee) => {
+            if (employee.id !== id) return employee;
+            return {
+              ...employee,
+              name: trimmedName,
+              role: trimmedRole,
+              baseSalary: input.baseSalary,
+              hireDate: input.hireDate,
+              phone: trimmedPhone || undefined,
+              email: trimmedEmail || undefined,
+              initials: buildInitials(trimmedName),
+              salaryHistory: salaryChanged
+                ? [...employee.salaryHistory, { salary: input.baseSalary, effectiveDate: getLocalTodayIso() }]
+                : employee.salaryHistory,
+            };
+          }),
+        );
+        return { success: true };
+      }
+
+      const { data, error: updateError } = await updateEmployee(id, {
+        name: trimmedName,
+        role: trimmedRole,
+        baseSalary: input.baseSalary,
+        hireDate: input.hireDate,
+        phone: trimmedPhone || null,
+        email: trimmedEmail || null,
+      });
+
+      if (updateError || !data) {
+        return {
+          success: false,
+          message: updateError?.message ?? 'Não foi possível salvar as alterações.',
+        };
+      }
+
+      const salaryChanged = current.baseSalary !== data.baseSalary;
+      setEmployees((list) =>
+        list.map((employee) => {
+          if (employee.id !== id) return employee;
+          return {
+            ...data,
+            avatarColor: employee.avatarColor,
+            salaryHistory: salaryChanged
+              ? [...employee.salaryHistory, { salary: data.baseSalary, effectiveDate: getLocalTodayIso() }]
+              : employee.salaryHistory,
+          };
+        }),
+      );
+
+      return { success: true };
+    },
+    [employees, isDemoMode],
+  );
+
+  const deactivateEmployee = useCallback(
+    async (id: string): Promise<EmployeeMutationResult> => {
+      const current = employees.find((employee) => employee.id === id);
+      if (!current) {
+        return { success: false, message: 'Funcionário não encontrado.' };
+      }
+
+      if (!isEmployeeActive(current.status)) {
+        return { success: false, message: 'Este funcionário já está inativo.' };
+      }
 
       if (isDemoMode) {
         setEmployees((list) =>
@@ -286,21 +396,141 @@ export function EmployeesProvider({ children }: { children: ReactNode }) {
             };
           }),
         );
-        return;
+        return { success: true };
       }
 
       const { data, error: deactivateError } = await deactivateEmployeeRecord(id, current.status);
 
       if (deactivateError || !data) {
-        setError(deactivateError?.message ?? 'Não foi possível inativar o funcionário.');
-        return;
+        return {
+          success: false,
+          message: deactivateError?.message ?? 'Não foi possível desativar o funcionário.',
+        };
       }
 
       setEmployees((list) =>
-        list.map((employee) => (employee.id === id ? { ...employee, ...data } : employee)),
+        list.map((employee) =>
+          employee.id === id
+            ? { ...employee, ...data, avatarColor: employee.avatarColor, salaryHistory: employee.salaryHistory }
+            : employee,
+        ),
       );
+
+      return { success: true };
     },
     [employees, isDemoMode],
+  );
+
+  const reactivateEmployee = useCallback(
+    async (id: string): Promise<EmployeeMutationResult> => {
+      const current = employees.find((employee) => employee.id === id);
+      if (!current) {
+        return { success: false, message: 'Funcionário não encontrado.' };
+      }
+
+      if (isEmployeeActive(current.status)) {
+        return { success: false, message: 'Este funcionário já está ativo.' };
+      }
+
+      if (activeCount >= activeLimit) {
+        return { success: false, message: 'Você atingiu o limite de funcionários ativos do plano.' };
+      }
+
+      if (isDemoMode) {
+        setEmployees((list) =>
+          list.map((employee) => {
+            if (employee.id !== id) return employee;
+            const activeStatus: EmployeeStatus = employee.status === 'Inativa' ? 'Ativa' : 'Ativo';
+            return {
+              ...employee,
+              status: activeStatus,
+              inactiveDate: undefined,
+            };
+          }),
+        );
+        return { success: true };
+      }
+
+      const { data, error: reactivateError } = await reactivateEmployeeRecord(id, current.status);
+
+      if (reactivateError || !data) {
+        return {
+          success: false,
+          message: reactivateError?.message ?? 'Não foi possível reativar o funcionário.',
+        };
+      }
+
+      setEmployees((list) =>
+        list.map((employee) =>
+          employee.id === id
+            ? {
+                ...employee,
+                ...data,
+                avatarColor: employee.avatarColor,
+                salaryHistory: employee.salaryHistory,
+                inactiveDate: data.inactiveDate,
+              }
+            : employee,
+        ),
+      );
+
+      return { success: true };
+    },
+    [activeCount, activeLimit, employees, isDemoMode],
+  );
+
+  const countEmployeeMovements = useCallback(
+    async (id: string): Promise<{ count: number | null; message?: string }> => {
+      if (isDemoMode) {
+        return { count: 0 };
+      }
+
+      if (!business?.id) {
+        return { count: null, message: 'Empresa não carregada. Aguarde ou recarregue a página.' };
+      }
+
+      const { count, error: countError } = await countMovementsForEmployee(business.id, id);
+
+      if (countError || count === null) {
+        return {
+          count: null,
+          message: countError?.message ?? 'Não foi possível verificar o histórico financeiro.',
+        };
+      }
+
+      return { count };
+    },
+    [business?.id, isDemoMode],
+  );
+
+  const removeEmployee = useCallback(
+    async (id: string, hasLocalFinancialHistory = false): Promise<EmployeeMutationResult> => {
+      const current = employees.find((employee) => employee.id === id);
+      if (!current) {
+        return { success: false, message: 'Funcionário não encontrado.' };
+      }
+
+      if (hasLocalFinancialHistory) {
+        return { success: false, message: EMPLOYEE_LINKED_HISTORY_MESSAGE };
+      }
+
+      if (isDemoMode) {
+        setEmployees((list) => list.filter((employee) => employee.id !== id));
+        return { success: true };
+      }
+
+      const { count, message } = await countEmployeeMovements(id);
+      if (count === null) {
+        return { success: false, message: message ?? 'Não foi possível verificar o histórico financeiro.' };
+      }
+
+      if (count > 0) {
+        return { success: false, message: EMPLOYEE_LINKED_HISTORY_MESSAGE };
+      }
+
+      return { success: false, message: EMPLOYEE_DELETE_BLOCKED_MESSAGE };
+    },
+    [countEmployeeMovements, employees, isDemoMode],
   );
 
   const updateEmployeeSalary = useCallback(
@@ -353,7 +583,11 @@ export function EmployeesProvider({ children }: { children: ReactNode }) {
       isDemoMode,
       reloadEmployees,
       addEmployee,
+      updateEmployeeDetails,
       deactivateEmployee,
+      reactivateEmployee,
+      removeEmployee,
+      countEmployeeMovements,
       updateEmployeeSalary,
       getEmployeeById,
     }),
@@ -366,7 +600,11 @@ export function EmployeesProvider({ children }: { children: ReactNode }) {
       isDemoMode,
       reloadEmployees,
       addEmployee,
+      updateEmployeeDetails,
       deactivateEmployee,
+      reactivateEmployee,
+      removeEmployee,
+      countEmployeeMovements,
       updateEmployeeSalary,
       getEmployeeById,
     ],

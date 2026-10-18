@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ExportPdfButton } from '@/components/ExportPdfButton';
@@ -13,11 +13,13 @@ import { BrandColors } from '@/constants/colors';
 import { MOBILE_STAT_CARD_WIDTH, MobileSpace } from '@/constants/layout';
 import { REPORTS_STAT_ICONS } from '@/constants/statIcons';
 import { ProLockedButton, useAppData } from '@/contexts/AppDataContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useEmployees } from '@/contexts/EmployeesContext';
 import { usePlan } from '@/contexts/PlanContext';
+import { useManagerialPdfExport } from '@/hooks/useManagerialPdfExport';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
-import { useSimulatedPdfExport } from '@/hooks/useSimulatedPdfExport';
 import { MANAGERIAL_DISCLAIMER } from '@/utils/calculations';
+import { CURRENT_COMPETENCE, getCalendarCompetence } from '@/utils/competence';
 import { formatCurrency, formatShortDate } from '@/utils/format';
 import {
   buildCompetenceFilterOptions,
@@ -25,7 +27,6 @@ import {
   computeReportData,
   DEFAULT_REPORT_FILTERS,
   getAvailableCompetences,
-  isReportFiltersDirty,
   REPORT_RECORD_TYPE_OPTIONS,
   type ReportFilters,
 } from '@/utils/reports';
@@ -34,9 +35,10 @@ type ActiveFilterKey = 'employee' | 'period' | 'recordType';
 
 export default function ReportsScreen() {
   const { isPro } = usePlan();
+  const { business, user } = useAuth();
   const { isCompactLayout } = useResponsiveLayout();
-  const { exportPdf, isExporting, successMessage } = useSimulatedPdfExport();
-  const { employees } = useEmployees();
+  const { exportPdf, isExporting, successMessage, errorMessage } = useManagerialPdfExport();
+  const { employees, isDemoMode } = useEmployees();
   const {
     movements,
     isCompetenceClosed,
@@ -46,6 +48,22 @@ export default function ReportsScreen() {
 
   const [filters, setFilters] = useState<ReportFilters>(DEFAULT_REPORT_FILTERS);
   const [activeFilter, setActiveFilter] = useState<ActiveFilterKey | null>(null);
+  const reportCompetenceReady = useRef(false);
+
+  useEffect(() => {
+    if (reportCompetenceReady.current || !user) return;
+    reportCompetenceReady.current = true;
+    const competence = isDemoMode ? CURRENT_COMPETENCE : getCalendarCompetence();
+    setFilters((current) => (current.competence === competence ? current : { ...current, competence }));
+  }, [isDemoMode, user]);
+
+  const baselineFilters = useMemo<ReportFilters>(
+    () => ({
+      ...DEFAULT_REPORT_FILTERS,
+      competence: isDemoMode ? CURRENT_COMPETENCE : getCalendarCompetence(),
+    }),
+    [isDemoMode],
+  );
 
   const employeeOptions = useMemo(
     () => buildEmployeeFilterOptions(employees, movements, filters.competence),
@@ -59,18 +77,47 @@ export default function ReportsScreen() {
       setFilters((current) => ({ ...current, employeeId: 'all' }));
     }
   }, [employeeOptions, filters.employeeId]);
-  const competenceOptions = useMemo(
-    () => buildCompetenceFilterOptions(getAvailableCompetences(movements)),
-    [movements],
-  );
+  const competenceOptions = useMemo(() => {
+    const competences = new Set(getAvailableCompetences(movements));
+    competences.add(filters.competence);
+    return buildCompetenceFilterOptions([...competences].sort((a, b) => b.localeCompare(a)));
+  }, [filters.competence, movements]);
 
   const reportData = useMemo(
     () => computeReportData(employees, movements, filters, getMovementsForEmployee),
     [employees, filters, getMovementsForEmployee, movements],
   );
+  const statementData = useMemo(
+    () =>
+      computeReportData(
+        employees,
+        movements,
+        { ...filters, recordType: 'all' },
+        getMovementsForEmployee,
+      ),
+    [employees, filters, getMovementsForEmployee, movements],
+  );
+
+  const handleExportPdf = () => {
+    exportPdf({
+      companyName: business?.name,
+      competence: filters.competence,
+      competenceLabel: statementData.competenceLabel,
+      generatedAt: new Date(),
+      rows: statementData.summaryRows.map((row) => ({
+        employeeName: row.employeeName,
+        role: row.role,
+        forecast: row.forecast,
+      })),
+      totalForecast: statementData.totalForecast,
+    });
+  };
 
   const showMovementRows = filters.recordType !== 'all';
-  const filtersDirty = isReportFiltersDirty(filters);
+  const filtersDirty =
+    filters.employeeId !== baselineFilters.employeeId ||
+    filters.competence !== baselineFilters.competence ||
+    filters.recordType !== baselineFilters.recordType;
   const totalCardLabel =
     filters.recordType === 'all' ? 'Total previsto' : `Total (${reportData.recordTypeLabel.toLowerCase()})`;
 
@@ -121,12 +168,17 @@ export default function ReportsScreen() {
       <PageHeader
         title="Relatórios"
         subtitle="Visualize e exporte dados da sua equipe."
-        action={<ExportPdfButton onExport={exportPdf} isExporting={isExporting} />}
+        action={<ExportPdfButton onExport={handleExportPdf} isExporting={isExporting} />}
       />
 
       {successMessage && (
         <View style={styles.successBanner}>
           <Text style={styles.successText}>{successMessage}</Text>
+        </View>
+      )}
+      {errorMessage && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{errorMessage}</Text>
         </View>
       )}
 
@@ -166,7 +218,7 @@ export default function ReportsScreen() {
             label="Limpar filtros"
             variant="ghost"
             onPress={() => {
-              setFilters(DEFAULT_REPORT_FILTERS);
+              setFilters(baselineFilters);
               setActiveFilter(null);
             }}
           />
@@ -274,7 +326,7 @@ export default function ReportsScreen() {
         )}
 
         <View style={styles.exportActions}>
-          <ExportPdfButton onExport={exportPdf} isExporting={isExporting} fullWidth variant="primary" />
+          <ExportPdfButton onExport={handleExportPdf} isExporting={isExporting} fullWidth variant="primary" />
           {isPro ? (
             <Button label="Exportar Excel/CSV" variant="outline" fullWidth onPress={() => {}} />
           ) : (
@@ -299,6 +351,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: BrandColors.green,
+  },
+  errorBanner: {
+    backgroundColor: BrandColors.redLight,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  errorText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: BrandColors.red,
   },
   filters: {
     flexDirection: 'row',

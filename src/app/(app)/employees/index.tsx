@@ -1,5 +1,5 @@
-import { useRouter, type Href } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { Screen } from '@/components/mobile/Screen';
+import { AppIcon } from '@/components/ui/AppIcon';
 
 import { PlanLimitModal } from '@/components/PlanLimitModal';
 import { Badge, getStatusVariant } from '@/components/ui/Badge';
@@ -28,6 +29,7 @@ import { usePlan } from '@/contexts/PlanContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import type { Employee, EmployeeStatus } from '@/data/types';
 import { isEmployeeActive } from '@/utils/employee';
+import { matchesEmployeeQuery } from '@/utils/employeeSearch';
 import { formatCurrency } from '@/utils/format';
 import { validateHireDateInput } from '@/utils/dateInput';
 
@@ -46,16 +48,20 @@ export default function EmployeesScreen() {
   } = useEmployees();
   const { activeLimit } = usePlan();
   const { isCompactLayout } = useResponsiveLayout();
-  const [search, setSearch] = useState('');
+  const { q } = useLocalSearchParams<{ q?: string }>();
+  const initialQuery = typeof q === 'string' ? q : '';
+  const [search, setSearch] = useState(initialQuery);
   const [filter, setFilter] = useState<Filter>('Todos');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
 
+  useEffect(() => {
+    if (typeof q === 'string') setSearch(q);
+  }, [q]);
+
   const filtered = useMemo(() => {
     return employees.filter((e) => {
-      const matchesSearch =
-        e.name.toLowerCase().includes(search.toLowerCase()) ||
-        e.role.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = matchesEmployeeQuery(e, search);
       const matchesFilter =
         filter === 'Todos' ||
         (filter === 'Ativos' && isEmployeeActive(e.status)) ||
@@ -214,9 +220,13 @@ function EmployeeRow({ employee, isLast }: { employee: Employee; isLast: boolean
         <Pressable
           style={styles.actionButton}
           accessibilityRole="button"
-          accessibilityLabel={`Ver perfil de ${employee.name}`}
+          accessibilityLabel={`Editar ${employee.name}`}
           onPress={() => router.push(`/employees/${employee.id}` as Href)}>
-          <Text style={styles.actionIcon}>→</Text>
+          <AppIcon
+            name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+            size={18}
+            color={BrandColors.orange}
+          />
         </Pressable>
       </View>
     </View>
@@ -499,7 +509,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionIcon: { fontSize: 16, color: BrandColors.orange, fontWeight: '600' },
   emptyText: {
     padding: 32,
     textAlign: 'center',

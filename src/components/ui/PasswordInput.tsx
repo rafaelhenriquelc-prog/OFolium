@@ -1,9 +1,28 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View, type TextInputProps } from 'react-native';
 
 import { BrandColors, Shadows } from '@/constants/colors';
 import { MIN_TOUCH_TARGET, MOBILE_BREAKPOINT } from '@/constants/layout';
+
+const NATIVE_PASSWORD_REVEAL_STYLE_ID = 'ofolium-hide-native-password-reveal';
+
+function hideNativePasswordReveal() {
+  if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+  if (document.getElementById(NATIVE_PASSWORD_REVEAL_STYLE_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = NATIVE_PASSWORD_REVEAL_STYLE_ID;
+  style.textContent = `
+    input[type="password"]::-ms-reveal,
+    input[type="password"]::-ms-clear {
+      display: none !important;
+      width: 0;
+      height: 0;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 type PasswordInputProps = Omit<TextInputProps, 'secureTextEntry'> & {
   label?: string;
@@ -23,6 +42,10 @@ export function PasswordInput({
 }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
   const { width } = useWindowDimensions();
+
+  useEffect(() => {
+    hideNativePasswordReveal();
+  }, []);
   const isMobile = width < MOBILE_BREAKPOINT;
   const isCompact = isMobile && compact;
 

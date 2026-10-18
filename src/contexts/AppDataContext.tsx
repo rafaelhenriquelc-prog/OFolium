@@ -103,6 +103,7 @@ type AppDataContextValue = {
   closingSnapshot: ClosingSnapshot | null;
   getMovementsForDate: (date: string) => Movement[];
   getMovementsForEmployee: (employeeId: string, competence?: string) => Movement[];
+  hasEmployeeFinancialRecords: (employeeId: string) => boolean;
   getEmployeeSummary: (employeeId: string, competence?: string) => EmployeeClosingSummary | undefined;
   getWeekMovements: (startDay: number, endDay: number, competence?: string) => Movement[];
   markEmployeeReviewed: (employeeId: string) => void;
@@ -154,6 +155,18 @@ function buildSnapshot(
   };
 }
 
+function snapshotHasEmployeeMovements(snapshot: ClosingSnapshot | null | undefined, employeeId: string): boolean {
+  if (!snapshot) return false;
+  if (
+    snapshot.employees.some(
+      (employee) => employee.employeeId === employeeId && employee.movements.length > 0,
+    )
+  ) {
+    return true;
+  }
+  return snapshot.previousVersions.some((version) => snapshotHasEmployeeMovements(version, employeeId));
+}
+
 function cloneDemoMovements(): Movement[] {
   return INITIAL_MOVEMENTS.map((movement) => ({ ...movement }));
 }
@@ -177,7 +190,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [movements, setMovements] = useState<Movement[]>([]);
   const [isMovementsLoading, setIsMovementsLoading] = useState(!isDemoMode);
   const [movementsError, setMovementsError] = useState<string | null>(null);
-  const [isMovementSubmitting, setIsMovementSubmitting] = useState(false);
+  const movementSubmitLock = useRef(false);
 
   const [competenceState, setCompetenceState] = useState<CompetenceState>(() =>
     isDemoMode ? { ...INITIAL_COMPETENCE_STATE, reviewStatuses: { ...INITIAL_COMPETENCE_STATE.reviewStatuses } } : createEmptyCompetenceState(),
@@ -291,8 +304,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const activities = useMemo(() => {
     if (isDemoMode) return demoActivities;
-    return buildActivitiesFromMovements(currentMovements);
-  }, [currentMovements, demoActivities, isDemoMode]);
+    return buildActivitiesFromMovements(movements);
+  }, [demoActivities, isDemoMode, movements]);
 
   const closingSummaries = useMemo(() => {
     if (competenceState.snapshot?.competence === CURRENT_COMPETENCE) {
@@ -369,32 +382,58 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [competenceLabel, dashboardPendingItems.length, employees, overtimeEmployeeCount, overtimeHours, totalForecast],
   );
 
+  const closedCompetence =
+    competenceState.snapshot?.competence === competenceState.competence
+      ? competenceState.competence
+      : null;
+
+  const movementsForCompetence = useCallback(
+    (competence: string) => (competence === closedCompetence ? currentMovements : movements),
+    [closedCompetence, currentMovements, movements],
+  );
+
   const getMovementsForDate = useCallback(
     (date: string) =>
-      currentMovements
+      movementsForCompetence(date.slice(0, 7))
         .filter((movement) => movement.occurrenceDate === date)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    [currentMovements],
+    [movementsForCompetence],
   );
 
   const getMovementsForEmployee = useCallback(
     (employeeId: string, competence = CURRENT_COMPETENCE) =>
-      currentMovements
+      movementsForCompetence(competence)
         .filter((movement) => movement.employeeId === employeeId && movement.competence === competence)
         .sort((a, b) => b.occurrenceDate.localeCompare(a.occurrenceDate)),
-    [currentMovements],
+    [movementsForCompetence],
+  );
+
+  const hasEmployeeFinancialRecords = useCallback(
+    (employeeId: string) => {
+      if (movements.some((movement) => movement.employeeId === employeeId)) return true;
+      if (snapshotHasEmployeeMovements(competenceState.snapshot, employeeId)) return true;
+      return competenceState.archivedSnapshots.some((snapshot) =>
+        snapshotHasEmployeeMovements(snapshot, employeeId),
+      );
+    },
+    [competenceState.archivedSnapshots, competenceState.snapshot, movements],
   );
 
   const getEmployeeSummary = useCallback(
     (employeeId: string, competence = CURRENT_COMPETENCE) => {
-      const snapshotSummary = closingSummaries.find((item) => item.employeeId === employeeId);
-      if (snapshotSummary) return snapshotSummary;
+      if (competence === CURRENT_COMPETENCE) {
+        const trackedSummary = closingSummaries.find((item) => item.employeeId === employeeId);
+        if (trackedSummary) return trackedSummary;
+      }
+
       const employee = employees.find((item) => item.id === employeeId);
       if (!employee) return undefined;
       return computeEmployeeClosingSummary(
         employee,
         getMovementsForEmployee(employeeId, competence),
-        competenceState.reviewStatuses[employeeId] ?? 'Pendente',
+        competence === CURRENT_COMPETENCE
+          ? (competenceState.reviewStatuses[employeeId] ?? 'Pendente')
+          : 'Pendente',
       );
     },
     [closingSummaries, competenceState.reviewStatuses, employees, getMovementsForEmployee],
@@ -461,7 +500,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const addMovement = useCallback(
     async (input: Omit<Movement, 'id' | 'createdAt'>): Promise<AddMovementResult> => {
-      if (isMovementSubmitting) {
+      if (movementSubmitLock.current) {
         return { success: false, message: 'Aguarde o salvamento anterior terminar.' };
       }
 
@@ -476,38 +515,38 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         competence: input.competence || getCompetenceFromDate(input.occurrenceDate),
       };
 
-      if (isDemoMode) {
-        const movement: Movement = {
-          ...payload,
-          id: `m-${Date.now()}`,
-          createdAt: new Date().toISOString(),
-        };
-        setMovements((current) => [...current, movement]);
-        setDemoActivities((current) =>
-          [
-            {
-              id: `a-${Date.now()}`,
-              title: `${movement.type} registrado para ${movement.employeeName.split(' ')[0]}`,
-              detail: movement.value,
-              time: 'Agora',
-              icon: movement.type === 'Hora extra' ? '◷' : '◈',
-              iconBg: BrandColors.orangeLight,
-              iconColor: BrandColors.orange,
-              createdAt: movement.createdAt,
-            },
-            ...current,
-          ].slice(0, 8),
-        );
-        return { success: true, movement };
-      }
-
-      if (!business?.id) {
-        return { success: false, message: 'Empresa não carregada. Tente novamente.' };
-      }
-
-      setIsMovementSubmitting(true);
+      movementSubmitLock.current = true;
 
       try {
+        if (isDemoMode) {
+          const movement: Movement = {
+            ...payload,
+            id: `m-${Date.now()}`,
+            createdAt: new Date().toISOString(),
+          };
+          setMovements((current) => [...current, movement]);
+          setDemoActivities((current) =>
+            [
+              {
+                id: `a-${Date.now()}`,
+                title: `${movement.type} registrado para ${movement.employeeName.split(' ')[0]}`,
+                detail: movement.value,
+                time: 'Agora',
+                icon: movement.type === 'Hora extra' ? '◷' : '◈',
+                iconBg: BrandColors.orangeLight,
+                iconColor: BrandColors.orange,
+                createdAt: movement.createdAt,
+              },
+              ...current,
+            ].slice(0, 8),
+          );
+          return { success: true, movement };
+        }
+
+        if (!business?.id) {
+          return { success: false, message: 'Empresa não carregada. Tente novamente.' };
+        }
+
         const { data, error } = await createMovement({
           businessId: business.id,
           employeeId: payload.employeeId,
@@ -539,10 +578,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setMovements((current) => [data, ...current]);
         return { success: true, movement: data };
       } finally {
-        setIsMovementSubmitting(false);
+        movementSubmitLock.current = false;
       }
     },
-    [business?.id, employees, isDemoMode, isMovementSubmitting],
+    [business?.id, employees, isDemoMode],
   );
 
   const updateMovement = useCallback(
@@ -644,7 +683,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       currentCompetence: CURRENT_COMPETENCE,
       competenceLabel,
       competenceStatus: competenceState.status,
-      movements: currentMovements,
+      movements,
       isMovementsLoading,
       movementsError,
       notifications,
@@ -663,6 +702,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       closingSnapshot: competenceState.snapshot,
       getMovementsForDate,
       getMovementsForEmployee,
+      hasEmployeeFinancialRecords,
       getEmployeeSummary,
       getWeekMovements,
       markEmployeeReviewed,
@@ -683,6 +723,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       competenceState,
       competenceTotals,
       currentMovements,
+      movements,
       dashboardStats,
       dashboardPendingItems,
       pendingDetailsPath,
@@ -690,6 +731,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       getEmployeeSummary,
       getMovementsForDate,
       getMovementsForEmployee,
+      hasEmployeeFinancialRecords,
       getWeekMovements,
       isMovementsLoading,
       movementsError,

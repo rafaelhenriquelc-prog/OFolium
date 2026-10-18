@@ -295,6 +295,24 @@ export async function listMovementsByEmployee(
   return { data: (data as MovementRow[]).map(mapRowToMovement), error: null };
 }
 
+export async function countMovementsForEmployee(
+  businessId: string,
+  employeeId: string,
+): Promise<{ count: number | null; error: MovementsServiceError | null }> {
+  const { count, error } = await supabase
+    .from('movements')
+    .select('id', { count: 'exact', head: true })
+    .eq('business_id', businessId)
+    .eq('employee_id', employeeId);
+
+  if (error) {
+    logSupabaseError('countMovementsForEmployee', error);
+    return { count: null, error: { message: translateMovementsError(error.message), code: error.code } };
+  }
+
+  return { count: count ?? 0, error: null };
+}
+
 export async function createMovement(
   input: CreateMovementInput,
 ): Promise<{ data: Movement | null; error: MovementsServiceError | null }> {

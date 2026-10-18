@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { usePathname, useRouter, type Href } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated, {
   type AnimatedStyle,
@@ -126,7 +126,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const playToggleHint = useRef(!isCompactLayout && consumeSidebarToggleHint()).current;
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const sidebarWidth = useSharedValue(collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED);
 
   useEffect(() => {
@@ -134,6 +135,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       duration: 220,
     });
   }, [collapsed, sidebarWidth]);
+
+  useEffect(() => {
+    setAccountMenuOpen(false);
+  }, [pathname, collapsed]);
 
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
     width: sidebarWidth.value,
@@ -234,6 +239,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </View>
           )}
 
+          {accountMenuOpen ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.logoutButton,
+                collapsed && styles.logoutButtonCollapsed,
+                pressed && styles.logoutButtonPressed,
+              ]}
+              onPress={() => {
+                setAccountMenuOpen(false);
+                void logout().then(() => {
+                  router.replace('/login');
+                });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Sair da conta">
+              <Text style={styles.logoutText}>Sair</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             style={({ pressed }) => [
               styles.userSection,
@@ -241,25 +264,25 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               isSettingsRouteActive && styles.userSectionActive,
               pressed && styles.userSectionPressed,
             ]}
-            onPress={() => router.push('/settings' as Href)}
+            onPress={() => setAccountMenuOpen((open) => !open)}
             accessibilityRole="button"
-            accessibilityLabel="Abrir configurações da conta"
-            accessibilityState={{ selected: isSettingsRouteActive }}>
-            {isSettingsRouteActive && (
-              <View style={[styles.activeIndicator, collapsed && styles.activeIndicatorCollapsed]} />
-            )}
-            <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>{displayInitials}</Text>
-            </View>
-            {!collapsed && (
-              <View style={styles.userInfo}>
-                <Text style={[styles.userName, isSettingsRouteActive && styles.userNameActive]}>
-                  {displayName}
-                </Text>
-                <Text style={styles.userRole}>{displayRole}</Text>
+            accessibilityLabel="Abrir opção de sair"
+            accessibilityState={{ expanded: accountMenuOpen, selected: isSettingsRouteActive }}>
+              {isSettingsRouteActive && (
+                <View style={[styles.activeIndicator, collapsed && styles.activeIndicatorCollapsed]} />
+              )}
+              <View style={styles.userAvatar}>
+                <Text style={styles.userAvatarText}>{displayInitials}</Text>
               </View>
-            )}
-          </Pressable>
+              {!collapsed && (
+                <View style={styles.userInfo}>
+                  <Text style={[styles.userName, isSettingsRouteActive && styles.userNameActive]}>
+                    {displayName}
+                  </Text>
+                  <Text style={styles.userRole}>{displayRole}</Text>
+                </View>
+              )}
+            </Pressable>
         </View>
       </Animated.View>
 
@@ -459,6 +482,27 @@ const styles = StyleSheet.create({
   },
   proIconButtonPressed: {
     opacity: 0.8,
+  },
+  logoutButton: {
+    borderRadius: 10,
+    backgroundColor: 'rgba(229, 72, 77, 0.16)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minHeight: 42,
+    justifyContent: 'center',
+  },
+  logoutButtonCollapsed: {
+    width: 42,
+    paddingHorizontal: 0,
+    alignItems: 'center',
+  },
+  logoutButtonPressed: {
+    opacity: 0.75,
+  },
+  logoutText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: BrandColors.red,
   },
   userSection: {
     flexDirection: 'row',

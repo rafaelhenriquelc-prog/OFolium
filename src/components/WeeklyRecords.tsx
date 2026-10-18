@@ -1,13 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BrandColors, Shadows } from '@/constants/colors';
+import { mobileStackedCard } from '@/constants/layout';
 import { useAppData } from '@/contexts/AppDataContext';
 import { usePlan } from '@/contexts/PlanContext';
 import type { RecordType } from '@/data/types';
-import { DEMO_TODAY, isWithinLastMonths } from '@/utils/competence';
-import { mobileStackedCard } from '@/constants/layout';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { getCalendarCompetence, isDateWithinPlanHistory } from '@/utils/competence';
 
 const typeStyles: Record<RecordType, { label: string; color: string; bg: string }> = {
   'Hora extra': { label: 'Hora extra', color: BrandColors.orange, bg: BrandColors.orangeLight },
@@ -33,8 +33,7 @@ const MONTH_LABELS = [
   'dezembro',
 ];
 
-const MIN_HISTORY_DATE = '2026-06-01';
-const HISTORY_MONTHS_BASE = 3;
+const BASE_HISTORY_MESSAGE = 'O plano Base consulta o histórico dos últimos 3 meses.';
 
 function parseDate(dateStr: string): Date {
   const [year, month, day] = dateStr.split('-').map(Number);
@@ -54,9 +53,18 @@ function addDays(date: Date, amount: number): Date {
   return next;
 }
 
-function getMonthChunkStart(date: Date): Date {
-  const chunkStartDay = Math.floor((date.getDate() - 1) / 7) * 7 + 1;
-  return new Date(date.getFullYear(), date.getMonth(), chunkStartDay);
+function startOfWeek(date: Date): Date {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  start.setDate(start.getDate() - start.getDay());
+  return start;
+}
+
+function anchorDateForCompetence(competence: string): Date {
+  const today = new Date();
+  if (competence === getCalendarCompetence(today)) {
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  }
+  return parseDate(`${competence}-01`);
 }
 
 function formatDateRangeLabel(start: Date, end: Date): string {
@@ -64,18 +72,24 @@ function formatDateRangeLabel(start: Date, end: Date): string {
   const endDay = end.getDate();
   const startMonth = MONTH_LABELS[start.getMonth()];
   const endMonth = MONTH_LABELS[end.getMonth()];
+  const currentYear = new Date().getFullYear();
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
 
-  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
-    return `${startDay} – ${endDay} de ${startMonth}`;
+  if (sameMonth) {
+    const year = start.getFullYear() !== currentYear ? ` de ${start.getFullYear()}` : '';
+    return `${startDay} – ${endDay} de ${startMonth}${year}`;
   }
 
-  return `${startDay} de ${startMonth} – ${endDay} de ${endMonth}`;
+  if (start.getFullYear() !== end.getFullYear()) {
+    return `${startDay} de ${startMonth} de ${start.getFullYear()} – ${endDay} de ${endMonth} de ${end.getFullYear()}`;
+  }
+
+  const year = start.getFullYear() !== currentYear ? ` de ${start.getFullYear()}` : '';
+  return `${startDay} de ${startMonth} – ${endDay} de ${endMonth}${year}`;
 }
 
 function isDateAllowed(dateStr: string, isPro: boolean): boolean {
-  if (dateStr > DEMO_TODAY) return false;
-  if (isPro) return dateStr >= MIN_HISTORY_DATE;
-  return isWithinLastMonths(dateStr.slice(0, 7), HISTORY_MONTHS_BASE) && dateStr >= MIN_HISTORY_DATE;
+  return isDateWithinPlanHistory(dateStr, isPro);
 }
 
 function buildWeekDays(weekStart: Date) {
@@ -90,72 +104,78 @@ function buildWeekDays(weekStart: Date) {
   });
 }
 
-function isDateInWeek(dateStr: string, weekStart: Date): boolean {
-  const date = parseDate(dateStr);
-  const weekEnd = addDays(weekStart, 6);
-  return date >= weekStart && date <= weekEnd;
-}
+function resolveSelectedDate(weekStart: Date, isPro: boolean, preferred?: string): string {
+  const weekDays = buildWeekDays(weekStart);
+  const today = formatDateISO(new Date());
+  const candidates = [preferred, today].filter((value): value is string => Boolean(value));
 
-function resolveSelectedDateForWeek(
-  previousSelectedDate: string,
-  weekStart: Date,
-  weekDays: ReturnType<typeof buildWeekDays>,
-  isPro: boolean,
-): string {
-  if (isDateInWeek(previousSelectedDate, weekStart) && isDateAllowed(previousSelectedDate, isPro)) {
-    return previousSelectedDate;
+  for (const candidate of candidates) {
+    if (weekDays.some((day) => day.dateStr === candidate) && isDateAllowed(candidate, isPro)) {
+      return candidate;
+    }
   }
 
-  if (isDateInWeek(DEMO_TODAY, weekStart) && isDateAllowed(DEMO_TODAY, isPro)) {
-    return DEMO_TODAY;
-  }
-
-  const firstAllowedDay = weekDays.find((day) => isDateAllowed(day.dateStr, isPro));
-  return firstAllowedDay?.dateStr ?? weekDays[0].dateStr;
+  return weekDays.find((day) => isDateAllowed(day.dateStr, isPro))?.dateStr ?? weekDays[0].dateStr;
 }
 
-export function WeeklyRecords() {
+function weekHasAllowedDay(weekStart: Date, isPro: boolean): boolean {
+  return buildWeekDays(weekStart).some((day) => isDateAllowed(day.dateStr, isPro));
+}
+
+export function WeeklyRecords({ competence }: { competence: string }) {
   const { getMovementsForDate } = useAppData();
   const { isPro } = usePlan();
   const { isMobile } = useResponsiveLayout();
 
-  const initialWeekStart = useMemo(() => getMonthChunkStart(parseDate(DEMO_TODAY)), []);
-  const [weekStartDate, setWeekStartDate] = useState(() => formatDateISO(initialWeekStart));
-  const [selectedDate, setSelectedDate] = useState(DEMO_TODAY);
+  const [weekStartDate, setWeekStartDate] = useState(() =>
+    formatDateISO(startOfWeek(anchorDateForCompetence(competence))),
+  );
+  const [selectedDate, setSelectedDate] = useState(() =>
+    resolveSelectedDate(startOfWeek(anchorDateForCompetence(competence)), isPro),
+  );
   const [focusedDate, setFocusedDate] = useState<string | null>(null);
+  const [historyLimitReached, setHistoryLimitReached] = useState(false);
+
+  useEffect(() => {
+    const weekStart = startOfWeek(anchorDateForCompetence(competence));
+    setWeekStartDate(formatDateISO(weekStart));
+    setSelectedDate(resolveSelectedDate(weekStart, isPro));
+    setHistoryLimitReached(false);
+  }, [competence, isPro]);
 
   const weekStart = parseDate(weekStartDate);
   const weekDays = useMemo(() => buildWeekDays(weekStart), [weekStartDate]);
   const weekEnd = addDays(weekStart, 6);
   const dateRangeLabel = formatDateRangeLabel(weekStart, weekEnd);
 
-  const minAllowedDate = parseDate(MIN_HISTORY_DATE);
-  const maxAllowedDate = parseDate(DEMO_TODAY);
   const previousWeekStart = addDays(weekStart, -7);
   const nextWeekStart = addDays(weekStart, 7);
-
-  const canGoPrev = previousWeekStart >= minAllowedDate && isDateAllowed(formatDateISO(previousWeekStart), isPro);
-  const canGoNext = nextWeekStart <= maxAllowedDate && isDateAllowed(formatDateISO(nextWeekStart), isPro);
 
   const dayMovements = getMovementsForDate(selectedDate);
   const selectedDayAllowed = isDateAllowed(selectedDate, isPro);
 
-  const goToPreviousWeek = () => {
-    if (!canGoPrev) return;
-    const nextWeekStartDate = formatDateISO(previousWeekStart);
-    const nextWeekDays = buildWeekDays(previousWeekStart);
-    setWeekStartDate(nextWeekStartDate);
-    setSelectedDate((current) =>
-      resolveSelectedDateForWeek(current, previousWeekStart, nextWeekDays, isPro),
+  const moveToWeek = (targetStart: Date) => {
+    const targetDays = buildWeekDays(targetStart);
+    const selectedIndex = Math.max(
+      0,
+      weekDays.findIndex((day) => day.dateStr === selectedDate),
     );
+    const sameWeekday = targetDays[selectedIndex]?.dateStr;
+    setWeekStartDate(formatDateISO(targetStart));
+    setSelectedDate(resolveSelectedDate(targetStart, isPro, sameWeekday));
+    setHistoryLimitReached(false);
+  };
+
+  const goToPreviousWeek = () => {
+    if (!weekHasAllowedDay(previousWeekStart, isPro)) {
+      setHistoryLimitReached(true);
+      return;
+    }
+    moveToWeek(previousWeekStart);
   };
 
   const goToNextWeek = () => {
-    if (!canGoNext) return;
-    const nextWeekStartDate = formatDateISO(nextWeekStart);
-    const nextWeekDays = buildWeekDays(nextWeekStart);
-    setWeekStartDate(nextWeekStartDate);
-    setSelectedDate((current) => resolveSelectedDateForWeek(current, nextWeekStart, nextWeekDays, isPro));
+    moveToWeek(nextWeekStart);
   };
 
   return (
@@ -170,15 +190,12 @@ export function WeeklyRecords() {
           style={({ pressed, hovered }) => [
             styles.weekArrow,
             isMobile && styles.weekArrowMobile,
-            !canGoPrev && styles.weekArrowDisabled,
-            (pressed || hovered) && canGoPrev && styles.weekArrowActive,
+            (pressed || hovered) && styles.weekArrowActive,
           ]}
           onPress={goToPreviousWeek}
-          disabled={!canGoPrev}
           accessibilityRole="button"
-          accessibilityLabel="Semana anterior"
-          accessibilityState={{ disabled: !canGoPrev }}>
-          <Text style={[styles.weekArrowText, !canGoPrev && styles.weekArrowTextDisabled]}>‹</Text>
+          accessibilityLabel="Semana anterior">
+          <Text style={styles.weekArrowText}>‹</Text>
         </Pressable>
 
         <View style={[styles.weekDays, isMobile && styles.weekDaysMobile]}>
@@ -192,6 +209,7 @@ export function WeeklyRecords() {
                 style={({ pressed, hovered }) => [
                   styles.dayColumn,
                   isMobile && styles.dayColumnMobile,
+                  isDisabled && styles.dayColumnDisabled,
                   (pressed || hovered) && !isDisabled && styles.dayColumnActive,
                   focusedDate === day.dateStr && styles.dayColumnFocused,
                 ]}
@@ -233,20 +251,21 @@ export function WeeklyRecords() {
           style={({ pressed, hovered }) => [
             styles.weekArrow,
             isMobile && styles.weekArrowMobile,
-            !canGoNext && styles.weekArrowDisabled,
-            (pressed || hovered) && canGoNext && styles.weekArrowActive,
+            (pressed || hovered) && styles.weekArrowActive,
           ]}
           onPress={goToNextWeek}
-          disabled={!canGoNext}
           accessibilityRole="button"
-          accessibilityLabel="Próxima semana"
-          accessibilityState={{ disabled: !canGoNext }}>
-          <Text style={[styles.weekArrowText, !canGoNext && styles.weekArrowTextDisabled]}>›</Text>
+          accessibilityLabel="Próxima semana">
+          <Text style={styles.weekArrowText}>›</Text>
         </Pressable>
       </View>
 
+      {historyLimitReached ? <Text style={styles.limitText}>{BASE_HISTORY_MESSAGE}</Text> : null}
+
       <View style={[styles.recordsList, isMobile && styles.recordsListMobile]}>
-        {!selectedDayAllowed || dayMovements.length === 0 ? (
+        {!selectedDayAllowed ? (
+          <Text style={styles.emptyText}>{BASE_HISTORY_MESSAGE}</Text>
+        ) : dayMovements.length === 0 ? (
           <Text style={styles.emptyText}>Nenhum registro neste dia.</Text>
         ) : (
           dayMovements.map((record) => {
@@ -271,11 +290,11 @@ export function WeeklyRecords() {
 
 const styles = StyleSheet.create({
   card: {
-    flex: 2,
-    minWidth: 320,
+    width: '100%',
+    alignSelf: 'stretch',
     backgroundColor: BrandColors.white,
     borderRadius: 14,
-    padding: 24,
+    padding: 20,
     borderWidth: 1,
     borderColor: BrandColors.border,
     ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
@@ -285,7 +304,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   cardHeader: {
-    marginBottom: 20,
+    marginBottom: 14,
     gap: 4,
   },
   cardTitle: {
@@ -301,8 +320,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 24,
-    paddingBottom: 16,
+    marginBottom: 14,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: BrandColors.borderLight,
   },
@@ -375,6 +394,9 @@ const styles = StyleSheet.create({
   },
   dayColumnActive: {
     opacity: 0.92,
+  },
+  dayColumnDisabled: {
+    opacity: 0.35,
   },
   dayColumnFocused: {
     ...(Platform.OS === 'web'
@@ -471,5 +493,11 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 13,
     color: BrandColors.textMuted,
+  },
+  limitText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: BrandColors.textSecondary,
+    marginBottom: 10,
   },
 });

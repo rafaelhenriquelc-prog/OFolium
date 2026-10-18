@@ -1,17 +1,26 @@
 import { useRouter, type Href } from 'expo-router';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AppIcon } from '@/components/ui/AppIcon';
 import { Badge, getStatusVariant } from '@/components/ui/Badge';
 import { BrandColors, Shadows } from '@/constants/colors';
 import { mobileStackedCard, MIN_TOUCH_TARGET, MobileSpace, MobileType } from '@/constants/layout';
 import { useEmployees } from '@/contexts/EmployeesContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { matchesEmployeeQuery } from '@/utils/employeeSearch';
 
-export function EmployeeTable() {
+export function EmployeeTable({ query = '' }: { query?: string }) {
   const router = useRouter();
   const { employees } = useEmployees();
   const { isMobile } = useResponsiveLayout();
-  const preview = employees.slice(0, 4);
+  const normalizedQuery = query.trim();
+  const matched = normalizedQuery
+    ? employees.filter((employee) => matchesEmployeeQuery(employee, normalizedQuery))
+    : employees;
+  const preview = normalizedQuery ? matched : matched.slice(0, 4);
+  const employeesHref = (
+    normalizedQuery ? `/employees?q=${encodeURIComponent(normalizedQuery)}` : '/employees'
+  ) as Href;
 
   return (
     <View style={[styles.card, isMobile && styles.cardMobile]}>
@@ -20,7 +29,7 @@ export function EmployeeTable() {
         <View style={[styles.cardActions, isMobile && styles.cardActionsMobile]}>
           <Pressable
             style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}
-            onPress={() => router.push('/employees' as Href)}
+            onPress={() => router.push(employeesHref)}
             accessibilityRole="button">
             <Text style={styles.linkText}>Ver todos</Text>
           </Pressable>
@@ -35,6 +44,10 @@ export function EmployeeTable() {
 
       {isMobile ? (
         <View style={styles.mobileList}>
+          {preview.length === 0 && (
+            <Text style={styles.emptyText}>Nenhum funcionário encontrado.</Text>
+          )}
+
           {preview.map((employee) => (
             <Pressable
               key={employee.id}
@@ -72,6 +85,10 @@ export function EmployeeTable() {
             <Text style={[styles.columnHeader, styles.colActions]}>Ações</Text>
           </View>
 
+          {preview.length === 0 && (
+            <Text style={styles.emptyText}>Nenhum funcionário encontrado.</Text>
+          )}
+
           {preview.map((employee, index) => (
             <View
               key={employee.id}
@@ -99,8 +116,14 @@ export function EmployeeTable() {
               <View style={styles.colActions}>
                 <Pressable
                   style={styles.actionButton}
-                  onPress={() => router.push(`/employees/${employee.id}` as Href)}>
-                  <Text style={styles.actionIcon}>→</Text>
+                  onPress={() => router.push(`/employees/${employee.id}` as Href)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Abrir perfil de ${employee.name}`}>
+                  <AppIcon
+                    name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+                    size={18}
+                    color={BrandColors.orange}
+                  />
                 </Pressable>
               </View>
             </View>
@@ -113,11 +136,11 @@ export function EmployeeTable() {
 
 const styles = StyleSheet.create({
   card: {
-    flex: 3,
-    minWidth: 520,
+    width: '100%',
+    alignSelf: 'stretch',
     backgroundColor: BrandColors.white,
     borderRadius: 14,
-    padding: 24,
+    padding: 20,
     borderWidth: 1,
     borderColor: BrandColors.border,
     ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
@@ -130,7 +153,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 14,
     flexWrap: 'wrap',
     gap: 12,
   },
@@ -236,7 +259,7 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 11,
   },
   tableRowBorder: {
     borderBottomWidth: 1,
@@ -297,16 +320,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: BrandColors.textSecondary,
   },
+  emptyText: {
+    fontSize: 14,
+    color: BrandColors.textMuted,
+    paddingVertical: 8,
+  },
   actionButton: {
     width: 36,
     height: 36,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  actionIcon: {
-    fontSize: 16,
-    color: BrandColors.orange,
-    fontWeight: '600',
   },
 });

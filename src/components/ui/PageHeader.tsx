@@ -8,17 +8,22 @@ type PageHeaderProps = {
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
+  centered?: boolean;
 };
 
-export function PageHeader({ title, subtitle, action }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, action, centered }: PageHeaderProps) {
   const { isMobile, isTablet } = useResponsiveLayout();
   const compact = isMobile || isTablet;
 
   return (
-    <View style={[styles.header, compact && styles.headerCompact]}>
-      <View style={[styles.left, !compact && styles.leftDesktop]}>
-        <Text style={[styles.title, compact && styles.titleCompact]}>{title}</Text>
-        {subtitle && <Text style={[styles.subtitle, compact && styles.subtitleCompact]}>{subtitle}</Text>}
+    <View style={[styles.header, compact && styles.headerCompact, centered && styles.headerCentered]}>
+      <View style={[styles.left, !compact && styles.leftDesktop, centered && styles.leftCentered]}>
+        <Text style={[styles.title, compact && styles.titleCompact, centered && styles.titleCentered]}>{title}</Text>
+        {subtitle && (
+          <Text style={[styles.subtitle, compact && styles.subtitleCompact, centered && styles.subtitleCentered]}>
+            {subtitle}
+          </Text>
+        )}
       </View>
       {action && <View style={[styles.action, compact && styles.actionCompact]}>{action}</View>}
     </View>
@@ -46,6 +51,21 @@ const styles = StyleSheet.create({
   },
   leftDesktop: {
     minWidth: 200,
+  },
+  headerCentered: {
+    justifyContent: 'center',
+  },
+  leftCentered: {
+    alignItems: 'center',
+    flex: 0,
+    width: '100%',
+    maxWidth: 560,
+  },
+  titleCentered: {
+    textAlign: 'center',
+  },
+  subtitleCentered: {
+    textAlign: 'center',
   },
   title: {
     fontSize: 24,

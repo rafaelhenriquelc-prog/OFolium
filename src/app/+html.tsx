@@ -11,6 +11,18 @@ export default function Root({ children }: PropsWithChildren) {
         <meta httpEquiv="Content-Language" content="pt-BR" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
         <ScrollViewStyleReset />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              input[type="password"]::-ms-reveal,
+              input[type="password"]::-ms-clear {
+                display: none !important;
+                width: 0;
+                height: 0;
+              }
+            `,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>

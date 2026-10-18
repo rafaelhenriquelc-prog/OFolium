@@ -192,6 +192,18 @@ export async function updateEmployee(
   return { data: mapRowToEmployee(data as EmployeeRow, 0), error: null };
 }
 
+export async function reactivateEmployeeRecord(
+  employeeId: string,
+  currentStatus: EmployeeStatus,
+): Promise<{ data: Employee | null; error: EmployeesServiceError | null }> {
+  const activeStatus: EmployeeStatus = currentStatus === 'Inativa' ? 'Ativa' : 'Ativo';
+
+  return updateEmployee(employeeId, {
+    status: activeStatus,
+    inactiveDate: null,
+  });
+}
+
 export async function deactivateEmployeeRecord(
   employeeId: string,
   currentStatus: EmployeeStatus,

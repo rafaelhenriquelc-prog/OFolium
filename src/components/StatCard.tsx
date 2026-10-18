@@ -3,7 +3,7 @@ import { Fragment, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 import { FadeSlideIn } from '@/components/animation/FadeSlideIn';
-import { PendingDetailsModal } from '@/components/PendingDetailsModal';
+import { DashboardInsightPanel, type DashboardPanelId } from '@/components/DashboardInsightPanel';
 import { AppIcon } from '@/components/ui/AppIcon';
 import { BrandColors, Shadows } from '@/constants/colors';
 import { ICON_SIZES, STAT_SYMBOLS, type StatIconType } from '@/constants/icons';
@@ -15,6 +15,7 @@ import {
 } from '@/constants/layout';
 import { useAppData } from '@/contexts/AppDataContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { useDashboardCompetence } from '@/hooks/useDashboardCompetence';
 import { formatCurrency } from '@/utils/format';
 
 type StatCardProps = {
@@ -35,6 +36,9 @@ type StatCardProps = {
   highlighted?: boolean;
   fixedWidth?: number;
   compact?: boolean;
+  /** Altura um pouco menor, só nos indicadores do dashboard. */
+  dense?: boolean;
+  selected?: boolean;
   onPress?: () => void;
   accessibilityLabel?: string;
 };
@@ -58,6 +62,8 @@ export function StatCard({
   highlighted,
   fixedWidth,
   compact,
+  dense,
+  selected,
   onPress,
   accessibilityLabel,
 }: StatCardProps) {
@@ -93,13 +99,13 @@ export function StatCard({
 
   const cardContent = (
     <>
-      <View style={[styles.cardTop, compact && styles.cardTopCompact]}>
+      <View style={[styles.cardTop, compact && styles.cardTopCompact, dense && !compact && styles.cardTopDense]}>
         <View style={[styles.iconCircle, compact && styles.iconCircleCompact, { backgroundColor: iconBg }]}>
           {iconContent}
         </View>
       </View>
       <Text style={[styles.label, compact && styles.labelCompact]}>{label}</Text>
-      <Text style={[styles.value, compact && styles.valueCompact]}>{value}</Text>
+      <Text style={[styles.value, compact && styles.valueCompact, dense && !compact && styles.valueDense]}>{value}</Text>
       {detail && (
         <Text style={[styles.detail, compact && styles.detailCompact, highlighted && styles.detailHighlighted]}>
           {detail}
@@ -114,8 +120,10 @@ export function StatCard({
   const cardStyle = [
     styles.card,
     compact && styles.cardCompact,
+    dense && !compact && styles.cardDense,
     highlighted && styles.cardHighlighted,
     onPress && styles.cardInteractive,
+    selected && styles.cardSelected,
     onPress && isFocused && styles.cardFocused,
     fixedWidth ? { width: fixedWidth, minWidth: fixedWidth, flex: 0 } : null,
   ];
@@ -124,7 +132,10 @@ export function StatCard({
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel ?? `${label}. ${detailAction ?? 'Ver detalhes'}`}
+        accessibilityState={{ expanded: Boolean(selected), selected: Boolean(selected) }}
+        accessibilityLabel={
+          accessibilityLabel ?? `${label}. ${selected ? 'Recolher detalhes' : 'Expandir detalhes'}`
+        }
         onPress={onPress}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
@@ -152,6 +163,7 @@ type StatCardsRowEntryAnimation = {
 };
 
 type StatCardsRowProps = {
+  competence: string;
   entryAnimation?: StatCardsRowEntryAnimation;
 };
 
@@ -179,15 +191,25 @@ function wrapStatCard(
   );
 }
 
-export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
+export function StatCardsRow({ competence, entryAnimation }: StatCardsRowProps) {
   const { dashboardStats } = useAppData();
+  const competenceView = useDashboardCompetence(competence);
   const { isMobile } = useResponsiveLayout();
-  const [showPendingDetails, setShowPendingDetails] = useState(false);
+  const [activePanel, setActivePanel] = useState<DashboardPanelId | null>(null);
+
+  const togglePanel = (panel: DashboardPanelId) => {
+    setActivePanel((current) => (current === panel ? null : panel));
+  };
 
   const mobileEnterStyle = isMobile
     ? ({ width: MOBILE_STAT_CARD_WIDTH, flexShrink: 0 } as ViewStyle)
     : undefined;
   const desktopEnterStyle = isMobile ? undefined : styles.statCardEnter;
+
+  const panelHint = (panel: DashboardPanelId, label: string, value: string) =>
+    activePanel === panel
+      ? `${label}: ${value}. Ocultar detalhes`
+      : `${label}: ${value}. Mostrar detalhes`;
 
   const cardElements: { id: string; card: React.ReactElement; enterStyle?: ViewStyle }[] = [
     {
@@ -197,12 +219,15 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
         <StatCard
           label="Funcionários ativos"
           value={String(dashboardStats.activeEmployees)}
-          detail={dashboardStats.competenceLabel}
+          detail="Na equipe atualmente"
           iconImage={DASHBOARD_STAT_ICONS.activeEmployees}
           iconIncludesBackground
-          highlighted
+          selected={activePanel === 'employees'}
+          dense={!isMobile}
           compact={isMobile}
           fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
+          onPress={() => togglePanel('employees')}
+          accessibilityLabel={panelHint('employees', 'Funcionários ativos', String(dashboardStats.activeEmployees))}
         />
       ),
     },
@@ -212,12 +237,16 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
       card: (
         <StatCard
           label="Previsão do mês"
-          value={formatCurrency(dashboardStats.monthForecast)}
+          value={formatCurrency(competenceView.totalForecast)}
           detail="Valor gerencial previsto"
           iconImage={DASHBOARD_STAT_ICONS.monthForecast}
           iconIncludesBackground
+          selected={activePanel === 'forecast'}
+          dense={!isMobile}
           compact={isMobile}
           fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
+          onPress={() => togglePanel('forecast')}
+          accessibilityLabel={panelHint('forecast', 'Previsão do mês', formatCurrency(competenceView.totalForecast))}
         />
       ),
     },
@@ -227,12 +256,16 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
       card: (
         <StatCard
           label="Horas extras"
-          value={dashboardStats.overtimeHours}
-          detail={`${dashboardStats.overtimeEmployeeCount} funcionário${dashboardStats.overtimeEmployeeCount === 1 ? '' : 's'}`}
+          value={competenceView.overtimeHours}
+          detail={`${competenceView.overtimeEmployeeCount} funcionário${competenceView.overtimeEmployeeCount === 1 ? '' : 's'}`}
           iconImage={DASHBOARD_STAT_ICONS.overtime}
           iconIncludesBackground
+          selected={activePanel === 'overtime'}
+          dense={!isMobile}
           compact={isMobile}
           fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
+          onPress={() => togglePanel('overtime')}
+          accessibilityLabel={panelHint('overtime', 'Horas extras', competenceView.overtimeHours)}
         />
       ),
     },
@@ -242,14 +275,15 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
       card: (
         <StatCard
           label="Pendências"
-          value={String(dashboardStats.pendingCount)}
-          detailAction="Ver detalhes"
+          value={String(competenceView.pendingItems.length)}
           iconImage={DASHBOARD_STAT_ICONS.pending}
           iconIncludesBackground
+          selected={activePanel === 'pending'}
+          dense={!isMobile}
           compact={isMobile}
           fixedWidth={isMobile ? MOBILE_STAT_CARD_WIDTH : undefined}
-          onPress={() => setShowPendingDetails(true)}
-          accessibilityLabel={`Pendências: ${dashboardStats.pendingCount}. Ver detalhes`}
+          onPress={() => togglePanel('pending')}
+          accessibilityLabel={panelHint('pending', 'Pendências', String(competenceView.pendingItems.length))}
         />
       ),
     },
@@ -259,9 +293,9 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
     <Fragment key={id}>{wrapStatCard(card, id, index, enterStyle, entryAnimation)}</Fragment>
   ));
 
-  if (isMobile) {
-    return (
-      <>
+  return (
+    <View>
+      {isMobile ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -269,19 +303,11 @@ export function StatCardsRow({ entryAnimation }: StatCardsRowProps = {}) {
           style={styles.mobileScroll}>
           {cards}
         </ScrollView>
-        <PendingDetailsModal
-          visible={showPendingDetails}
-          onClose={() => setShowPendingDetails(false)}
-        />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <View style={styles.row}>{cards}</View>
-      <PendingDetailsModal visible={showPendingDetails} onClose={() => setShowPendingDetails(false)} />
-    </>
+      ) : (
+        <View style={styles.row}>{cards}</View>
+      )}
+      {activePanel ? <DashboardInsightPanel panel={activePanel} competence={competence} /> : null}
+    </View>
   );
 }
 
@@ -293,7 +319,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: 16,
-    marginBottom: 24,
+    marginBottom: 16,
     flexWrap: 'wrap',
   },
   mobileScroll: {
@@ -320,12 +346,21 @@ const styles = StyleSheet.create({
     gap: 4,
     borderRadius: 12,
   },
+  cardDense: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 4,
+  },
   cardInteractive: {
     ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : {}),
   },
   cardPressed: {
     opacity: 0.94,
     borderColor: 'rgba(255, 92, 0, 0.22)',
+  },
+  cardSelected: {
+    borderColor: BrandColors.orange,
+    backgroundColor: BrandColors.orangeCream,
   },
   cardFocused: {
     ...(Platform.OS === 'web'
@@ -347,6 +382,9 @@ const styles = StyleSheet.create({
   },
   cardTopCompact: {
     marginBottom: 4,
+  },
+  cardTopDense: {
+    marginBottom: 2,
   },
   iconCircle: {
     width: 40,
@@ -402,6 +440,10 @@ const styles = StyleSheet.create({
   valueCompact: {
     fontSize: MobileType.statValue,
     letterSpacing: -0.3,
+  },
+  valueDense: {
+    fontSize: 24,
+    lineHeight: 28,
   },
   detail: {
     fontSize: 12,

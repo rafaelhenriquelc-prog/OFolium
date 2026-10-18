@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PlanTrialModal } from '@/components/PlanTrialModal';
 import { Screen } from '@/components/mobile/Screen';
@@ -7,12 +7,11 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { HorizontalTableScroll } from '@/components/ui/HorizontalTableScroll';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { BrandColors, Shadows } from '@/constants/colors';
+import { BrandColors } from '@/constants/colors';
 import {
   PLAN_CARD_CONTENT,
   PLAN_TABLE_ROWS,
   PLANS,
-  PRO_BENEFITS,
   type PlanTableCellValue,
 } from '@/constants/plans';
 import { usePlan } from '@/contexts/PlanContext';
@@ -39,9 +38,37 @@ export default function ProScreen() {
     setShowTrialModal(true);
   };
 
+  const planCards = (
+    <>
+      <PlanCard
+        title={PLANS.base.name}
+        price={PLAN_CARD_CONTENT.base.price}
+        limit={`Até ${PLAN_CARD_CONTENT.base.activeLimit} funcionários ativos`}
+        description={PLAN_CARD_CONTENT.base.description}
+        features={PLAN_CARD_CONTENT.base.features}
+        current={!isPro}
+      />
+      <PlanCard
+        title={PLANS.pro.name}
+        price={PLAN_CARD_CONTENT.pro.price}
+        limit={`Até ${PLAN_CARD_CONTENT.pro.activeLimit} funcionários ativos`}
+        description={PLAN_CARD_CONTENT.pro.description}
+        features={PLAN_CARD_CONTENT.pro.features}
+        highlighted
+        popular
+        current={isPro}
+        trialButtonLabel={isPro ? 'Plano atual' : 'Experimentar Pro grátis'}
+        trialDisabled={isPro}
+        onTrialPress={openTrialModal}
+      />
+    </>
+  );
+
   return (
     <Screen>
+      <View style={[styles.page, isCompactLayout && styles.pageCompact]}>
       <PageHeader
+        centered={!isCompactLayout}
         title="Conheça o OFolium Pro"
         subtitle="Organize sua equipe, revise o fechamento mensal e gere um relatório claro para enviar ao contador."
       />
@@ -52,41 +79,25 @@ export default function ProScreen() {
         </View>
       )}
 
-      <ScrollView
-        horizontal={isCompactLayout}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.comparisonRow, isCompactLayout && styles.comparisonRowCompact]}
-        style={isCompactLayout ? styles.comparisonScroll : undefined}>
-        <PlanCard
-          title={PLANS.base.name}
-          price={PLAN_CARD_CONTENT.base.price}
-          limit={`Até ${PLAN_CARD_CONTENT.base.activeLimit} funcionários ativos`}
-          description={PLAN_CARD_CONTENT.base.description}
-          features={PLAN_CARD_CONTENT.base.features}
-          current={!isPro}
-        />
-        <PlanCard
-          title={PLANS.pro.name}
-          price={PLAN_CARD_CONTENT.pro.price}
-          limit={`Até ${PLAN_CARD_CONTENT.pro.activeLimit} funcionários ativos`}
-          description={PLAN_CARD_CONTENT.pro.description}
-          features={PLAN_CARD_CONTENT.pro.features}
-          highlighted
-          popular
-          current={isPro}
-          trialButtonLabel={isPro ? 'Plano atual' : 'Experimentar Pro grátis'}
-          trialDisabled={isPro}
-          onTrialPress={openTrialModal}
-        />
-      </ScrollView>
+      {isCompactLayout ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.comparisonRow, styles.comparisonRowCompact]}
+          style={styles.comparisonScroll}>
+          {planCards}
+        </ScrollView>
+      ) : (
+        <View style={styles.comparisonRow}>{planCards}</View>
+      )}
 
       <Text style={styles.sectionTitle}>Compare os planos</Text>
       <Card style={styles.tableCard}>
         <HorizontalTableScroll minTableWidth={480}>
           <View style={styles.tableHeader}>
           <Text style={[styles.tableHeaderCell, styles.tableFeatureCol]}>Funcionalidade</Text>
-          <Text style={[styles.tableHeaderCell, styles.tablePlanCol]}>Plano Base</Text>
-          <Text style={[styles.tableHeaderCell, styles.tablePlanCol]}>Plano Pro</Text>
+          <Text style={[styles.tableHeaderCell, styles.tablePlanCol, styles.tablePlanHeader]}>Plano Base</Text>
+          <Text style={[styles.tableHeaderCell, styles.tablePlanCol, styles.tablePlanHeader]}>Plano Pro</Text>
         </View>
         {PLAN_TABLE_ROWS.map((row, index) => (
           <View
@@ -103,15 +114,6 @@ export default function ProScreen() {
         ))}
         </HorizontalTableScroll>
       </Card>
-
-      <View style={styles.benefitsGrid}>
-        {PRO_BENEFITS.map((benefit) => (
-          <Card key={benefit.title} style={styles.benefitCard}>
-            <Text style={styles.benefitTitle}>{benefit.title}</Text>
-            <Text style={styles.benefitDescription}>{benefit.description}</Text>
-          </Card>
-        ))}
-      </View>
 
       <Card style={styles.finalCtaCard}>
         <Text style={styles.finalCtaTitle}>Feche o mês sem depender de anotações espalhadas.</Text>
@@ -135,6 +137,7 @@ export default function ProScreen() {
           folha de pagamento oficial ou a conferência contábil.
         </Text>
       </Card>
+      </View>
 
       <PlanTrialModal
         visible={showTrialModal}
@@ -226,6 +229,14 @@ function PlanCard({
 }
 
 const styles = StyleSheet.create({
+  page: {
+    width: '100%',
+    maxWidth: 840,
+    alignSelf: 'center',
+  },
+  pageCompact: {
+    maxWidth: '100%',
+  },
   successBanner: {
     backgroundColor: BrandColors.greenLight,
     borderWidth: 1,
@@ -241,21 +252,26 @@ const styles = StyleSheet.create({
   },
   comparisonScroll: {
     marginBottom: 8,
+    alignSelf: 'stretch',
   },
   comparisonRow: {
     flexDirection: 'row',
     gap: 16,
-    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'stretch',
+    alignSelf: 'center',
   },
   comparisonRowCompact: {
-    flexWrap: 'nowrap',
+    justifyContent: 'flex-start',
     paddingRight: 16,
   },
   planCard: {
-    flex: 1,
-    minWidth: 280,
-    gap: 12,
-    ...(Platform.OS === 'web' ? { maxWidth: 360 } : {}),
+    width: 360,
+    maxWidth: '100%',
+    flexGrow: 1,
+    flexBasis: 320,
+    gap: 10,
+    padding: 20,
   },
   planCardHighlighted: {
     borderColor: 'rgba(255, 92, 0, 0.25)',
@@ -355,12 +371,13 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 12,
     backgroundColor: BrandColors.offWhite,
     borderBottomWidth: 1,
     borderBottomColor: BrandColors.borderLight,
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: 8,
+    alignItems: 'center',
   },
   tableHeaderCell: {
     fontSize: 12,
@@ -371,11 +388,11 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 11,
     gap: 8,
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   tableRowBorder: {
     borderBottomWidth: 1,
@@ -387,7 +404,11 @@ const styles = StyleSheet.create({
   },
   tablePlanCol: {
     flex: 1,
-    minWidth: 100,
+    minWidth: 96,
+    alignItems: 'center',
+  },
+  tablePlanHeader: {
+    textAlign: 'center',
   },
   tableFeatureCell: {
     fontSize: 14,
@@ -413,33 +434,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: BrandColors.textSecondary,
   },
-  benefitsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    marginTop: 32,
-  },
-  benefitCard: {
-    flex: 1,
-    minWidth: 220,
-    gap: 8,
-    ...(Platform.OS === 'web' ? Shadows.cardWeb : Shadows.card),
-  },
-  benefitTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: BrandColors.textPrimary,
-  },
-  benefitDescription: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: BrandColors.textSecondary,
-  },
   finalCtaCard: {
-    marginTop: 32,
-    gap: 12,
+    marginTop: 20,
+    gap: 10,
     alignItems: 'center',
-    ...(Platform.OS === 'web' ? { maxWidth: 560, alignSelf: 'center' as const, width: '100%' as const } : {}),
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 520,
+    padding: 22,
   },
   finalCtaTitle: {
     fontSize: 18,
